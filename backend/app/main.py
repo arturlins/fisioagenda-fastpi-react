@@ -19,6 +19,7 @@ from app.core.logging import configurar_logging
 from app.core.middleware import CorrelacaoMiddleware
 from app.core.plataforma import configurar_loop_de_eventos
 from app.db.session import encerrar_engine
+from app.exceptions.handlers import registrar_tratadores
 
 # Cobre quem importa a aplicação e cria o próprio loop (pytest, Alembic). O
 # uvicorn ignora a política e é tratado em `servidor.py`.
@@ -65,6 +66,7 @@ def criar_app(config: Configuracao | None = None) -> FastAPI:
         expose_headers=["X-Request-ID", "Location"],
     )
 
+    registrar_tratadores(app)
     app.include_router(saude_router)
     return app
 
