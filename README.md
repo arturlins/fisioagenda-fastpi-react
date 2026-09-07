@@ -66,6 +66,38 @@ curl -s -X POST http://127.0.0.1:8080/realms/fisioagenda/protocol/openid-connect
   -d client_secret="$KEYCLOAK_BACKEND_CLIENT_SECRET"
 ```
 
+## Backend
+
+```bash
+cd backend
+cp .env.example .env      # BANCO_SENHA = APP_DB_PASSWORD do .env da raiz
+uv sync
+uv run python servidor.py
+```
+
+A API sobe em `http://127.0.0.1:8000`, com documentação interativa em `/docs`.
+
+| Rota | Resposta |
+|---|---|
+| `GET /saude` | liveness — não toca em dependência nenhuma |
+| `GET /saude/pronto` | readiness — verifica o banco; 503 quando indisponível |
+
+Desenvolvimento com recarga automática: `uv run uvicorn app.main:app --reload`.
+
+> **Por que existe o `servidor.py`.** No Windows o uvicorn escolhe o
+> `ProactorEventLoop`, sobre o qual o psycopg assíncrono não funciona. O
+> `servidor.py` cria o loop compatível antes de servir. Em Linux o
+> comportamento não muda. O modo `--reload` também funciona, porque roda em
+> subprocesso e nesse caminho o uvicorn já escolhe o loop certo.
+
+Verificações antes de considerar qualquer coisa pronta:
+
+```bash
+uv run ruff format . && uv run ruff check .
+uv run mypy app servidor.py tests
+uv run pytest
+```
+
 ## Recomeçando do zero
 
 ```bash
