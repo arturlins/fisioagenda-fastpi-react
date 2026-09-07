@@ -90,12 +90,49 @@ Desenvolvimento com recarga automática: `uv run uvicorn app.main:app --reload`.
 > comportamento não muda. O modo `--reload` também funciona, porque roda em
 > subprocesso e nesse caminho o uvicorn já escolhe o loop certo.
 
-Verificações antes de considerar qualquer coisa pronta:
+Migrações do banco:
+
+```bash
+uv run alembic upgrade head      # aplica
+uv run alembic current           # revisão atual
+```
+
+> Depois de `docker compose down -v`, reaplique as migrações: o volume foi embora junto.
+
+### API
+
+Rotas sob `/api/v1`. A única pública é `POST /auth/registro-conta`, que cria a conta e o
+primeiro usuário — daí em diante, usuário é criado por quem já está dentro.
+
+| Recurso | Verbos |
+|---|---|
+| `/usuarios` | POST, GET (paginado, com filtros), GET por id, PUT, DELETE (lógico) |
+| `/clinicas` | POST, GET, GET por id, PUT, DELETE |
+| `/clinicas/{id}/usuarios` | POST, GET, PUT, DELETE — vínculo com papel por clínica |
+| `/auth/eu` | GET — quem sou e em quais clínicas atuo |
+
+`exemplos.http` traz uma requisição pronta para cada uma, incluindo os casos de erro. Abra no
+REST Client do VS Code ou no cliente HTTP do JetBrains.
+
+### Testes e verificações
 
 ```bash
 uv run ruff format . && uv run ruff check .
-uv run mypy app servidor.py tests
+uv run mypy app servidor.py tests alembic/env.py
 uv run pytest
+```
+
+Os testes rodam contra o PostgreSQL de verdade, no banco `fisioagenda_test`: o esquema depende
+de enum nativo, `timestamptz` e constraint de exclusão, e testar em SQLite testaria outro
+sistema. Cada teste roda dentro de uma transação revertida ao final, então a ordem não importa
+e nada precisa ser truncado.
+
+O Keycloak é dublê na maioria dos testes — o que se verifica ali é a nossa lógica. A integração
+real tem suíte própria:
+
+```bash
+uv run pytest -m keycloak        # exige `docker compose up -d`
+uv run pytest -m "not keycloak"  # ignora o IdP
 ```
 
 ## Recomeçando do zero

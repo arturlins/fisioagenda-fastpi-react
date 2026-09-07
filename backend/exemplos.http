@@ -1,0 +1,226 @@
+### FisioAgenda — exemplos de requisição
+#
+# Compatível com o REST Client do VS Code e com o cliente HTTP do JetBrains.
+# Execute na ordem: o registro cria a conta, e o login devolve o token que as
+# demais rotas usam.
+#
+# Antes: `docker compose up -d` na raiz e `uv run python servidor.py` aqui.
+
+@api = http://127.0.0.1:8000
+@keycloak = http://127.0.0.1:8080
+@realm = fisioagenda
+
+# Troque pelos valores do .env da raiz.
+@clientTestes = fisioagenda-testes
+@segredoTestes = COLE_AQUI_O_KEYCLOAK_TESTES_CLIENT_SECRET
+
+@email = ana@clinicamovimento.com.br
+@senha = SenhaForte#2026
+
+
+### 1. Saúde — liveness (não toca em dependência)
+GET {{api}}/saude
+
+
+### 2. Prontidão — verifica banco e Keycloak
+GET {{api}}/saude/pronto
+
+
+### 3. Registro de conta — única rota pública
+# @name registro
+POST {{api}}/api/v1/auth/registro-conta
+Content-Type: application/json
+
+{
+  "nome_conta": "Clínica Movimento",
+  "cnpj": "12345678000199",
+  "nome_responsavel": "Ana Ribeiro Souza",
+  "email": "{{email}}",
+  "senha": "{{senha}}"
+}
+
+### 4. Login — token de usuário pelo Keycloak
+# Em produção o fluxo é Authorization Code + PKCE pelo frontend; este grant
+# direto existe só no realm de desenvolvimento, para exercitar a API.
+# @name login
+POST {{keycloak}}/realms/{{realm}}/protocol/openid-connect/token
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=password&client_id={{clientTestes}}&client_secret={{segredoTestes}}&username={{email}}&password={{senha}}
+
+@token = {{login.response.body.access_token}}
+
+
+### 5. Perfil do autenticado
+GET {{api}}/api/v1/auth/eu
+Authorization: Bearer {{token}}
+
+
+### 6. Sem token — 401 no formato padronizado de erro
+GET {{api}}/api/v1/auth/eu
+
+
+# =============================================================================
+# USUÁRIOS — os quatro verbos
+# =============================================================================
+
+### 7. POST — cria usuário (201 + Location)
+# @name novoUsuario
+POST {{api}}/api/v1/usuarios
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "nome": "Bruno Terapeuta Silva",
+  "email": "bruno@clinicamovimento.com.br",
+  "senha": "OutraSenhaForte#2026",
+  "telefone": "82999990000",
+  "e_profissional": true,
+  "registro_conselho": "CREFITO-3 12345-F",
+  "especialidade": "Ortopedia",
+  "cor_agenda": "#3B82F6"
+}
+
+@usuarioId = {{novoUsuario.response.body.public_id}}
+
+### 8. POST com e-mail repetido — 409
+POST {{api}}/api/v1/usuarios
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "nome": "Outra Pessoa",
+  "email": "bruno@clinicamovimento.com.br",
+  "senha": "OutraSenhaForte#2026"
+}
+
+### 9. POST com senha curta — 422 apontando o campo
+POST {{api}}/api/v1/usuarios
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "nome": "Pessoa Teste",
+  "email": "curta@clinicamovimento.com.br",
+  "senha": "123"
+}
+
+### 10. GET — lista paginada
+GET {{api}}/api/v1/usuarios?pagina=1&tamanho=20
+Authorization: Bearer {{token}}
+
+### 11. GET — filtros
+GET {{api}}/api/v1/usuarios?e_profissional=true&ativo=true&busca=Bruno
+Authorization: Bearer {{token}}
+
+### 12. GET por public_id
+GET {{api}}/api/v1/usuarios/{{usuarioId}}
+Authorization: Bearer {{token}}
+
+### 13. GET inexistente — 404
+GET {{api}}/api/v1/usuarios/00000000-0000-0000-0000-000000000000
+Authorization: Bearer {{token}}
+
+### 14. PUT — substitui os campos editáveis
+PUT {{api}}/api/v1/usuarios/{{usuarioId}}
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "nome": "Bruno Terapeuta Silva",
+  "email": "bruno.silva@clinicamovimento.com.br",
+  "telefone": "82999990001",
+  "e_profissional": true,
+  "especialidade": "Ortopedia e Traumatologia",
+  "ativo": true
+}
+
+### 15. DELETE — exclusão lógica (204)
+DELETE {{api}}/api/v1/usuarios/{{usuarioId}}
+Authorization: Bearer {{token}}
+
+
+# =============================================================================
+# CLÍNICAS E VÍNCULOS
+# =============================================================================
+
+### 16. POST — cria clínica
+# @name novaClinica
+POST {{api}}/api/v1/clinicas
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "nome": "Unidade Centro",
+  "fuso_horario": "America/Maceio",
+  "telefone": "8233330000",
+  "endereco": "Rua das Palmeiras, 100",
+  "cidade": "Maceió",
+  "uf": "AL"
+}
+
+@clinicaId = {{novaClinica.response.body.public_id}}
+
+### 17. POST com fuso inexistente — 422
+POST {{api}}/api/v1/clinicas
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "nome": "Unidade Inválida",
+  "fuso_horario": "Marte/Olimpo"
+}
+
+### 18. GET — lista clínicas da conta
+GET {{api}}/api/v1/clinicas
+Authorization: Bearer {{token}}
+
+### 19. GET por public_id
+GET {{api}}/api/v1/clinicas/{{clinicaId}}
+Authorization: Bearer {{token}}
+
+### 20. PUT — atualiza clínica
+PUT {{api}}/api/v1/clinicas/{{clinicaId}}
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "nome": "Unidade Centro",
+  "fuso_horario": "America/Maceio",
+  "telefone": "8233330001",
+  "cidade": "Maceió",
+  "uf": "AL",
+  "ativa": true
+}
+
+### 21. POST — vincula usuário à clínica com papel
+POST {{api}}/api/v1/clinicas/{{clinicaId}}/usuarios
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "usuario_public_id": "{{usuarioId}}",
+  "papel": "administrador"
+}
+
+### 22. GET — quem atua na clínica
+GET {{api}}/api/v1/clinicas/{{clinicaId}}/usuarios
+Authorization: Bearer {{token}}
+
+### 23. PUT — altera o papel do vínculo
+PUT {{api}}/api/v1/clinicas/{{clinicaId}}/usuarios/{{usuarioId}}
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "papel": "comum",
+  "ativo": true
+}
+
+### 24. DELETE — remove o vínculo
+DELETE {{api}}/api/v1/clinicas/{{clinicaId}}/usuarios/{{usuarioId}}
+Authorization: Bearer {{token}}
+
+### 25. DELETE — remove a clínica (só sem vínculos)
+DELETE {{api}}/api/v1/clinicas/{{clinicaId}}
+Authorization: Bearer {{token}}

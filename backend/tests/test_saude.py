@@ -1,7 +1,7 @@
 """Endpoints operacionais e correlação de requisição.
 
-Não tocam no banco de propósito: liveness que depende de infraestrutura não é
-liveness. A prontidão, que depende, é coberta na suíte de integração.
+Liveness não toca em dependência: liveness que depende de infraestrutura não é
+liveness. A prontidão, que depende, é coberta na verificação de integração.
 """
 
 from __future__ import annotations
@@ -23,8 +23,7 @@ async def test_saude_responde_ok(cliente: AsyncClient) -> None:
 async def test_correlacao_gerada_quando_cliente_nao_envia(cliente: AsyncClient) -> None:
     resposta = await cliente.get("/saude")
 
-    recebido = resposta.headers[CABECALHO_CORRELACAO]
-    assert uuid.UUID(recebido)  # levanta se não for um UUID válido
+    assert uuid.UUID(resposta.headers[CABECALHO_CORRELACAO])
 
 
 async def test_correlacao_do_cliente_e_preservada(cliente: AsyncClient) -> None:
@@ -39,5 +38,4 @@ async def test_correlacao_invalida_e_substituida(cliente: AsyncClient) -> None:
         "/saude", headers={CABECALHO_CORRELACAO: "quebra\tde;log " + "x" * 90}
     )
 
-    devolvido = resposta.headers[CABECALHO_CORRELACAO]
-    assert uuid.UUID(devolvido)
+    assert uuid.UUID(resposta.headers[CABECALHO_CORRELACAO])
