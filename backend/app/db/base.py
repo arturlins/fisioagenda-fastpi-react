@@ -10,7 +10,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, MetaData, text
+from sqlalchemy import BigInteger, DateTime, Identity, MetaData, text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -29,6 +29,16 @@ CONVENCAO_NOMES = {
 
 class Base(DeclarativeBase):
     metadata = MetaData(naming_convention=CONVENCAO_NOMES)
+
+
+class IdMixin:
+    """Chave primária interna: `bigint generated always as identity`.
+
+    `always` e não `by default`: o valor é do banco, e nem a aplicação nem uma
+    carga manual podem sobrescrevê-lo.
+    """
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
 
 
 class PublicIdMixin:
