@@ -6,7 +6,10 @@ Aqui a ausência de credencial vira `NaoAutenticadoError`, que passa pelo mesmo
 handler de todos os outros erros.
 """
 
-from __future__ import annotations
+# Sem `from __future__ import annotations`: `requer_acesso_a_clinica` monta
+# `Annotated[uuid.UUID, Path(alias=parametro)]` em tempo de execucao, e com
+# anotacoes adiadas isso vira uma string que o Pydantic nao consegue avaliar
+# — a variavel do closure nao existe no escopo de resolucao.
 
 import uuid
 from collections.abc import Callable, Coroutine
