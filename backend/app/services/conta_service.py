@@ -10,15 +10,14 @@ from __future__ import annotations
 import logging
 import uuid
 
+from pydantic import SecretStr
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.integrations.keycloak.admin import KeycloakAdmin
-from app.mappers import conta_mapper
 from app.models.acesso import Usuario
 from app.models.organizacao import Conta
 from app.repositories.conta_repository import ContaRepository
 from app.repositories.usuario_repository import UsuarioRepository
-from app.schemas.conta import RegistroContaRequest
 
 _logger = logging.getLogger("fisioagenda.contas")
 
@@ -39,23 +38,25 @@ class ContaService:
         self._usuarios = usuario_repository
         self._keycloak = keycloak
 
-    async def registrar(self, dto: RegistroContaRequest) -> tuple[Conta, Usuario]:
+    async def registrar(
+        self, conta: Conta, dono: Usuario, senha: SecretStr
+    ) -> tuple[Conta, Usuario]:
+        """Recebe as entidades já montadas pelo Controller e as persiste."""
         # Cria primeiro no Keycloak: se a ordem fosse inversa e o IdP falhasse,
         # ficaria uma linha local apontando para um `keycloak_id` inexistente —
         # usuário que não loga e não pode ser recriado, porque o índice único de
         # e-mail bloqueia. Aqui, o pior caso é um usuário órfão no Keycloak:
         # falha visível e reparável, em vez de silenciosa.
         keycloak_id = await self._keycloak.criar_usuario(
-            email=str(dto.email),
-            nome=dto.nome_responsavel,
-            senha=dto.senha.get_secret_value(),
+            email=dono.email, nome=dono.nome, senha=senha.get_secret_value()
         )
 
         try:
-            conta = await self._contas.adicionar(conta_mapper.de_registro_para_conta(dto))
-            dono = await self._usuarios.adicionar(
-                conta_mapper.de_registro_para_dono(dto, conta_id=conta.id, keycloak_id=keycloak_id)
-            )
+            conta = await self._contas.adicionar(conta)
+            # O elo entre os dois só existe depois de a conta ganhar id no banco.
+            dono.conta_id = conta.id
+            dono.keycloak_id = keycloak_id
+            dono = await self._usuarios.adicionar(dono)
             await self._sessao.commit()
         except Exception:
             await self._sessao.rollback()

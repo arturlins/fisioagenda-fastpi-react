@@ -37,7 +37,10 @@ async def registrar_conta(
     servico: ContaServiceDep,
     resposta: Response,
 ) -> RegistroContaResponse:
-    conta, dono = await servico.registrar(dto)
+    # Conversão na camada web: o Service recebe entidades, não o DTO.
+    conta, dono = await servico.registrar(
+        conta_mapper.para_conta(dto), conta_mapper.para_dono(dto), dto.senha
+    )
     resposta.headers["Location"] = f"/api/v1/usuarios/{dono.public_id}"
     return conta_mapper.para_resposta_de_registro(conta, dono)
 
