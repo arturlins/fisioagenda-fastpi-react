@@ -46,6 +46,19 @@ class Configuracao(BaseSettings):
     banco_pool_tamanho: int = Field(default=5, ge=1)
     banco_pool_overflow: int = Field(default=10, ge=0)
 
+    # --- Keycloak ------------------------------------------------------------
+    keycloak_url: str = "http://127.0.0.1:8080"
+    keycloak_realm: str = "fisioagenda"
+    # Client confidencial da API. O service account dele fala com a Admin API;
+    # as credenciais de admin raiz do Keycloak nunca entram aqui.
+    keycloak_client_id: str = "fisioagenda-backend"
+    keycloak_client_secret: SecretStr
+    keycloak_timeout_segundos: float = 10.0
+    # Tempo mínimo entre recargas do JWKS. Sem isso, token com `kid` inválido
+    # viraria um vetor de carga contra o Keycloak: uma requisição de rede por
+    # requisição HTTP maliciosa.
+    keycloak_jwks_intervalo_minimo_s: float = 30.0
+
     # --- HTTP ----------------------------------------------------------------
     http_host: str = "127.0.0.1"
     http_porta: int = 8000
@@ -68,6 +81,27 @@ class Configuracao(BaseSettings):
     @property
     def e_producao(self) -> bool:
         return self.ambiente is Ambiente.PRODUCAO
+
+    # --- URLs derivadas do Keycloak ------------------------------------------
+    # Montadas aqui, uma vez, para que nenhuma camada precise concatenar caminho
+    # de OIDC à mão.
+
+    @property
+    def keycloak_emissor(self) -> str:
+        """Valor esperado da claim `iss`. Comparado byte a byte na verificação."""
+        return f"{self.keycloak_url}/realms/{self.keycloak_realm}"
+
+    @property
+    def keycloak_jwks_url(self) -> str:
+        return f"{self.keycloak_emissor}/protocol/openid-connect/certs"
+
+    @property
+    def keycloak_token_url(self) -> str:
+        return f"{self.keycloak_emissor}/protocol/openid-connect/token"
+
+    @property
+    def keycloak_admin_url(self) -> str:
+        return f"{self.keycloak_url}/admin/realms/{self.keycloak_realm}"
 
 
 @lru_cache

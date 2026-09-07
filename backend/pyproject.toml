@@ -11,6 +11,8 @@ dependencies = [
     "alembic>=1.14",
     "pydantic>=2.9",
     "pydantic-settings>=2.6",
+    "pyjwt[crypto]>=2.10",
+    "httpx>=0.28",
 ]
 
 [dependency-groups]
