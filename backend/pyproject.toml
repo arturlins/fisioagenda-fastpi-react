@@ -53,6 +53,9 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["S105", "S106"]  # credenciais de teste são fixas por natureza
+# O gerador carrega trechos de JavaScript embutidos; quebrá-los em várias linhas
+# tornaria o script do Postman mais difícil de ler, não menos.
+"scripts/gerar_colecao_postman.py" = ["E501"]
 
 [tool.mypy]
 python_version = "3.13"
