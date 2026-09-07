@@ -120,7 +120,10 @@ async def test_ciclo_de_vida_do_usuario_na_admin_api(
     assert await admin.buscar_por_email(email) == keycloak_id
 
     await admin.definir_habilitado(keycloak_id, habilitado=False)
-    await admin.atualizar_usuario(keycloak_id, nome="Teste Renomeado")
+    # Perfil completo: o User Profile do Keycloak valida a representacao
+    # inteira no PUT, e representacao parcial volta 400.
+    await admin.atualizar_usuario(keycloak_id, email=email, nome="Teste Renomeado")
+    assert await admin.buscar_por_email(email) == keycloak_id
 
 
 async def test_email_duplicado_vira_conflito(

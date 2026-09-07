@@ -150,21 +150,26 @@ class KeycloakAdmin:
         encontrados: list[dict[str, Any]] = resposta.json()
         return uuid.UUID(encontrados[0]["id"]) if encontrados else None
 
-    async def atualizar_usuario(
-        self, keycloak_id: uuid.UUID, *, email: str | None = None, nome: str | None = None
-    ) -> None:
-        corpo: dict[str, Any] = {}
-        if email is not None:
-            corpo["email"] = email
-            corpo["username"] = email
-        if nome is not None:
-            corpo["firstName"] = nome
-        if not corpo:
-            return
+    async def atualizar_usuario(self, keycloak_id: uuid.UUID, *, email: str, nome: str) -> None:
+        """Envia o perfil completo, nunca um campo isolado.
 
-        resposta = await self._requisitar("PUT", f"/users/{keycloak_id}", json=corpo)
+        O User Profile do Keycloak valida a representacao inteira no PUT: mandar
+        so o e-mail faz `firstName` e `lastName` chegarem vazios e a atualizacao
+        volta 400. Por isso os dois valores atuais sao sempre exigidos aqui.
+        """
+        primeiro, ultimo = _separar_nome(nome)
+        resposta = await self._requisitar(
+            "PUT",
+            f"/users/{keycloak_id}",
+            json={
+                "username": email,
+                "email": email,
+                "firstName": primeiro,
+                "lastName": ultimo,
+            },
+        )
         if resposta.status_code == httpx.codes.CONFLICT:
-            raise UsuarioJaExisteNoIdpError(email or "")
+            raise UsuarioJaExisteNoIdpError(email)
         self._garantir_sucesso(resposta, "atualizar_usuario")
 
     async def definir_habilitado(self, keycloak_id: uuid.UUID, *, habilitado: bool) -> None:
