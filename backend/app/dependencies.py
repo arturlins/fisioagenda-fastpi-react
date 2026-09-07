@@ -25,7 +25,9 @@ from app.repositories.clinica_repository import ClinicaRepository
 from app.repositories.conta_repository import ContaRepository
 from app.repositories.usuario_repository import UsuarioRepository
 from app.services.autenticacao_service import AutenticacaoService
+from app.services.clinica_service import ClinicaService
 from app.services.conta_service import ContaService
+from app.services.usuario_service import UsuarioService
 
 Sessao = Annotated[AsyncSession, Depends(obter_sessao)]
 Config = Annotated[Configuracao, Depends(obter_configuracao)]
@@ -72,6 +74,21 @@ def obter_conta_repository(sessao: Sessao) -> ContaRepository:
     return ContaRepository(sessao)
 
 
+def obter_clinica_service(
+    repositorio: Annotated[ClinicaRepository, Depends(obter_clinica_repository)],
+    usuarios: Annotated[UsuarioRepository, Depends(obter_usuario_repository)],
+) -> ClinicaService:
+    return ClinicaService(repositorio, usuarios)
+
+
+def obter_usuario_service(
+    sessao: Sessao,
+    repositorio: Annotated[UsuarioRepository, Depends(obter_usuario_repository)],
+    keycloak: Annotated[KeycloakAdmin, Depends(obter_keycloak_admin)],
+) -> UsuarioService:
+    return UsuarioService(sessao, repositorio, keycloak)
+
+
 def obter_conta_service(
     sessao: Sessao,
     contas: Annotated[ContaRepository, Depends(obter_conta_repository)],
@@ -91,3 +108,5 @@ CacheDeChavesDep = Annotated[CacheDeChaves, Depends(obter_cache_de_chaves)]
 KeycloakAdminDep = Annotated[KeycloakAdmin, Depends(obter_keycloak_admin)]
 AutenticacaoServiceDep = Annotated[AutenticacaoService, Depends(obter_autenticacao_service)]
 ContaServiceDep = Annotated[ContaService, Depends(obter_conta_service)]
+UsuarioServiceDep = Annotated[UsuarioService, Depends(obter_usuario_service)]
+ClinicaServiceDep = Annotated[ClinicaService, Depends(obter_clinica_service)]
