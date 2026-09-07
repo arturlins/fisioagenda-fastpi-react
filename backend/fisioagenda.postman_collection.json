@@ -1,0 +1,1455 @@
+{
+  "info": {
+    "name": "FisioAgenda — API",
+    "description": "# FisioAgenda\n\nAPI de agendamento de fisioterapia. Multi-clínica, uso interno, autenticação delegada ao Keycloak.\n\n## Antes de começar\n\n1. Na raiz do projeto: `docker compose up -d`\n2. Em `backend/`: `uv run alembic upgrade head`\n3. Dados de demonstração: `uv run python -m scripts.semear`\n4. Suba a API: `uv run python servidor.py`\n5. Preencha a variável **segredoTestes** desta coleção com o `KEYCLOAK_TESTES_CLIENT_SECRET` do `.env` da raiz\n6. Rode **1 · Autenticação → Login**. O token é gravado automaticamente e as demais requisições já vão autenticadas.\n\n## Ordem sugerida\n\nAs pastas estão numeradas. Cada uma pode ser executada inteira pelo *Runner*; as requisições encadeiam `public_id` entre si por variáveis de coleção.\n\n## Detalhes que evitam surpresa\n\n- Falha de validação devolve **422**, não 400 — é o idiomático do FastAPI, equivalente ao `MethodArgumentNotValidException` do Spring.\n- E-mail em domínio reservado (`.local`, `localhost`, `.test`) é recusado: são domínios que não recebem e-mail.\n- Senha exige no mínimo 10 caracteres, espelhando a política do realm.\n- Recurso de outra conta responde **404**, não 403: confirmar que existe já seria informação demais.\n- `DELETE` devolve 204 sem corpo — resposta vazia é o esperado.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "item": [
+    {
+      "name": "0 · Saúde",
+      "description": "Liveness não toca em dependência; readiness verifica banco e Keycloak.",
+      "item": [
+        {
+          "name": "GET /saude — liveness",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{api}}/saude",
+              "host": [
+                "{{api}}"
+              ],
+              "path": [
+                "saude"
+              ]
+            },
+            "description": "",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "GET /saude/pronto — readiness",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{api}}/saude/pronto",
+              "host": [
+                "{{api}}"
+              ],
+              "path": [
+                "saude",
+                "pronto"
+              ]
+            },
+            "description": "Reporta banco e Keycloak separadamente. 503 quando algum está fora.",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "1 · Autenticação",
+      "description": "Rode o **Login** primeiro: ele grava o token nas variáveis da coleção e todas as demais requisições passam a ir autenticadas.\n\nSe o banco foi semeado (`uv run python -m scripts.semear`), o login já funciona com as credenciais padrão. Senão, rode antes o **Registro de conta**.",
+      "item": [
+        {
+          "name": "Login (obtém o token)",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "grant_type",
+                  "value": "password"
+                },
+                {
+                  "key": "client_id",
+                  "value": "{{clientTestes}}"
+                },
+                {
+                  "key": "client_secret",
+                  "value": "{{segredoTestes}}"
+                },
+                {
+                  "key": "username",
+                  "value": "{{email}}"
+                },
+                {
+                  "key": "password",
+                  "value": "{{senha}}"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{keycloak}}/realms/{{realm}}/protocol/openid-connect/token",
+              "host": [
+                "{{keycloak}}"
+              ],
+              "path": [
+                "realms",
+                "{{realm}}",
+                "protocol",
+                "openid-connect",
+                "token"
+              ]
+            },
+            "description": "Direct Access Grant no client `fisioagenda-testes`, que existe apenas no realm de desenvolvimento. Em produção o fluxo é Authorization Code + PKCE pelo frontend.\n\nPreencha `segredoTestes` com o `KEYCLOAK_TESTES_CLIENT_SECRET` do `.env` da raiz do projeto."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"login bem-sucedido\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "const corpo = pm.response.json();",
+                  "if (corpo.access_token) {",
+                  "    pm.collectionVariables.set(\"token\", corpo.access_token);",
+                  "    console.log(\"token gravado; as demais requisições já vão autenticadas\");",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "GET /auth/eu — perfil e vínculos",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{api}}/api/v1/auth/eu",
+              "host": [
+                "{{api}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "eu"
+              ]
+            },
+            "description": "Quem sou e em quais clínicas atuo, com o papel em cada uma."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test(\"traz usuário e vínculos\", function () {",
+                  "    const c = pm.response.json();",
+                  "    pm.expect(c).to.have.property('usuario');",
+                  "    pm.expect(c).to.have.property('vinculos');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "GET /auth/eu sem token → 401",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{api}}/api/v1/auth/eu",
+              "host": [
+                "{{api}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "eu"
+              ]
+            },
+            "description": "Erro no formato padronizado, com `codigo`, `caminho` e `id_correlacao`.",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 401\", function () {",
+                  "    pm.response.to.have.status(401);",
+                  "});",
+                  "pm.test(\"codigo nao_autenticado\", function () {",
+                  "    pm.expect(pm.response.json().codigo).to.eql('nao_autenticado');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "POST /auth/registro-conta — única rota pública",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{api}}/api/v1/auth/registro-conta",
+              "host": [
+                "{{api}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "registro-conta"
+              ]
+            },
+            "description": "Cria a conta, registra a credencial no Keycloak e grava o primeiro usuário, que nasce dono. Daqui em diante, usuário é criado por quem já está dentro.\n\nO nome e o e-mail da conta são gerados a cada execução, então esta requisição pode ser repetida à vontade.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nome_conta\": \"{{nomeContaNova}}\",\n  \"cnpj\": \"98765432000188\",\n  \"nome_responsavel\": \"Paula Souza Andrade\",\n  \"email\": \"{{emailContaNova}}\",\n  \"senha\": \"OutraSenhaForte#2026\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const s = Date.now();",
+                  "pm.collectionVariables.set(\"nomeContaNova\", \"Clinica Nova \" + s);",
+                  "pm.collectionVariables.set(\"emailContaNova\", \"paula.\" + s + \"@clinicanova.com.br\");"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 201\", function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "2 · Usuários (os quatro verbos)",
+      "item": [
+        {
+          "name": "POST /usuarios → 201 + Location",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{api}}/api/v1/usuarios",
+              "host": [
+                "{{api}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "usuarios"
+              ]
+            },
+            "description": "Cria no Keycloak e localmente. O `public_id` é guardado para os próximos passos.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nome\": \"Eduardo Nunes Reis\",\n  \"email\": \"{{emailUsuario}}\",\n  \"senha\": \"SenhaDoEduardo#2026\",\n  \"telefone\": \"82999990010\",\n  \"e_profissional\": true,\n  \"registro_conselho\": \"CREFITO-3 24680-F\",\n  \"especialidade\": \"Reabilitação Esportiva\",\n  \"cor_agenda\": \"#F59E0B\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const s = Date.now();",
+                  "pm.collectionVariables.set(\"emailUsuario\", \"eduardo.\" + s + \"@clinicamovimento.com.br\");",
+                  "pm.collectionVariables.set(\"emailUsuarioNovo\", \"eduardo.reis.\" + s + \"@clinicamovimento.com.br\");"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 201\", function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "pm.test(\"devolve Location\", function () {",
+                  "    pm.expect(pm.response.headers.get('Location')).to.be.a('string');",
+                  "});",
+                  "pm.test(\"nao expoe id interno nem credencial\", function () {",
+                  "    const c = pm.response.json();",
+                  "    pm.expect(c).to.not.have.property('id');",
+                  "    pm.expect(c).to.not.have.property('keycloak_id');",
+                  "    pm.expect(c).to.not.have.property('senha');",
+                  "});",
+                  "const corpo = pm.response.json();",
+                  "if (corpo.public_id) {",
+                  "    pm.collectionVariables.set(\"usuarioId\", corpo.public_id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "POST com e-mail repetido → 409",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{api}}/api/v1/usuarios",
+              "host": [
+                "{{api}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "usuarios"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nome\": \"Outra Pessoa\",\n  \"email\": \"{{emailUsuario}}\",\n  \"senha\": \"SenhaQualquer#2026\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 409\", function () {",
+                  "    pm.response.to.have.status(409);",
+                  "});",
+                  "pm.test(\"codigo email_ja_cadastrado\", function () {",
+                  "    pm.expect(pm.response.json().codigo).to.eql('email_ja_cadastrado');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "POST com senha curta → 422 apontando o campo",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{api}}/api/v1/usuarios",
+              "host": [
+                "{{api}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "usuarios"
+              ]
+            },
+            "description": "A política do realm exige 10 caracteres. Validar aqui devolve 422 com o campo apontado, em vez de um 502 vindo do Keycloak.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nome\": \"Pessoa Teste\",\n  \"email\": \"curta@clinicamovimento.com.br\",\n  \"senha\": \"123\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 422\", function () {",
+                  "    pm.response.to.have.status(422);",
+                  "});",
+                  "pm.test(\"aponta o campo senha\", function () {",
+                  "    const campos = pm.response.json().detalhes.map(d => d.campo);",
+                  "    pm.expect(campos.join(',')).to.include('senha');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "GET /usuarios — lista paginada",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{api}}/api/v1/usuarios?pagina=1&tamanho=20",
+              "host": [
+                "{{api}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "usuarios"
+              ],
+              "query": [
+                {
+                  "key": "pagina",
+                  "value": "1"
+                },
+                {
+                  "key": "tamanho",
+                  "value": "20"
+                }
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test(\"pagina com total\", function () {",
+                  "    const c = pm.response.json();",
+                  "    pm.expect(c).to.have.property('total');",
+                  "    pm.expect(c.itens).to.be.an('array');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "GET /usuarios — com filtros",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{api}}/api/v1/usuarios?e_profissional=true&ativo=true&busca=Bruno",
+              "host": [
+                "{{api}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "usuarios"
+              ],
+              "query": [
+                {
+                  "key": "e_profissional",
+                  "value": "true"
+                },
+                {
+                  "key": "ativo",
+                  "value": "true"
+                },
+                {
+                  "key": "busca",
+                  "value": "Bruno"
+                }
+              ]
+            },
+            "description": "`busca` casa nome ou e-mail. `%` e `_` são escapados: um curinga digitado não devolve a conta inteira."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "GET /usuarios/{id}",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{api}}/api/v1/usuarios/{{usuarioId}}",
+              "host": [
+                "{{api}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "usuarios",
+                "{{usuarioId}}"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "GET /usuarios/{id} inexistente → 404",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{api}}/api/v1/usuarios/00000000-0000-0000-0000-000000000000",
+              "host": [
+                "{{api}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "usuarios",
+                "00000000-0000-0000-0000-000000000000"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 404\", function () {",
+                  "    pm.response.to.have.status(404);",
+                  "});",
+                  "pm.test(\"codigo recurso_nao_encontrado\", function () {",
+                  "    pm.expect(pm.response.json().codigo).to.eql('recurso_nao_encontrado');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "PUT /usuarios/{id}",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{api}}/api/v1/usuarios/{{usuarioId}}",
+              "host": [
+                "{{api}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "usuarios",
+                "{{usuarioId}}"
+              ]
+            },
+            "description": "Substitui os campos editáveis. Trocar o e-mail sincroniza com o Keycloak — o usuário passa a logar com o novo.\n\n`dono_da_conta` não está no DTO: quem se autopromovesse levaria a conta inteira.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nome\": \"Eduardo Nunes Reis\",\n  \"email\": \"{{emailUsuarioNovo}}\",\n  \"telefone\": \"82999990011\",\n  \"e_profissional\": true,\n  \"especialidade\": \"Reabilitação Esportiva e Pós-operatório\",\n  \"ativo\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test(\"e-mail atualizado\", function () {",
+                  "    pm.expect(pm.response.json().email).to.eql(pm.collectionVariables.get(\"emailUsuarioNovo\"));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "DELETE /usuarios/{id} → 204 (exclusão lógica)",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{api}}/api/v1/usuarios/{{usuarioId}}",
+              "host": [
+                "{{api}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "usuarios",
+                "{{usuarioId}}"
+              ]
+            },
+            "description": "A linha permanece no banco — histórico clínico e financeiro aponta para ela — mas o usuário some da API e é desabilitado no Keycloak."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 204\", function () {",
+                  "    pm.response.to.have.status(204);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "GET do excluído → 404",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{api}}/api/v1/usuarios/{{usuarioId}}",
+              "host": [
+                "{{api}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "usuarios",
+                "{{usuarioId}}"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 404\", function () {",
+                  "    pm.response.to.have.status(404);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "3 · Clínicas",
+      "item": [
+        {
+          "name": "POST /clinicas → 201 + Location",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{api}}/api/v1/clinicas",
+              "host": [
+                "{{api}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "clinicas"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nome\": \"{{nomeClinica}}\",\n  \"fuso_horario\": \"America/Maceio\",\n  \"telefone\": \"8233330003\",\n  \"endereco\": \"Rua Epaminondas Gracindo, 45\",\n  \"cidade\": \"Maceió\",\n  \"uf\": \"AL\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set(\"nomeClinica\", \"Unidade Jatiuca \" + Date.now());"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 201\", function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "const corpo = pm.response.json();",
+                  "if (corpo.public_id) {",
+                  "    pm.collectionVariables.set(\"clinicaId\", corpo.public_id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "POST com fuso inexistente → 422",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{api}}/api/v1/clinicas",
+              "host": [
+                "{{api}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "clinicas"
+              ]
+            },
+            "description": "O fuso converte o horário da grade semanal em instante absoluto na materialização da agenda. Um valor inválido só apareceria como atendimento na hora errada, muito depois.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nome\": \"Unidade Inválida\",\n  \"fuso_horario\": \"Marte/Olimpo\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 422\", function () {",
+                  "    pm.response.to.have.status(422);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "POST com nome repetido → 409",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{api}}/api/v1/clinicas",
+              "host": [
+                "{{api}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "clinicas"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nome\": \"{{nomeClinica}}\",\n  \"fuso_horario\": \"America/Maceio\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 409\", function () {",
+                  "    pm.response.to.have.status(409);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "GET /clinicas",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{api}}/api/v1/clinicas",
+              "host": [
+                "{{api}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "clinicas"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "GET /clinicas/{id}",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{api}}/api/v1/clinicas/{{clinicaId}}",
+              "host": [
+                "{{api}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "clinicas",
+                "{{clinicaId}}"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "PUT /clinicas/{id}",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{api}}/api/v1/clinicas/{{clinicaId}}",
+              "host": [
+                "{{api}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "clinicas",
+                "{{clinicaId}}"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nome\": \"{{nomeClinica}}\",\n  \"fuso_horario\": \"America/Sao_Paulo\",\n  \"telefone\": \"8233330004\",\n  \"cidade\": \"Maceió\",\n  \"uf\": \"AL\",\n  \"ativa\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "4 · Vínculos (papel por clínica)",
+      "description": "O papel é **por clínica**, não global: a mesma pessoa administra uma unidade e é usuária comum em outra. No banco semeado, Bruno demonstra exatamente isso.",
+      "item": [
+        {
+          "name": "Cria um usuário para vincular",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{api}}/api/v1/usuarios",
+              "host": [
+                "{{api}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "usuarios"
+              ]
+            },
+            "description": "Deixa a pasta autossuficiente: dá para rodá-la inteira no Runner.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nome\": \"Fernanda Lopes Dias\",\n  \"email\": \"{{emailVinculo}}\",\n  \"senha\": \"SenhaDaFernanda#2026\",\n  \"e_profissional\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set(\"emailVinculo\", \"fernanda.\" + Date.now() + \"@clinicamovimento.com.br\");"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 201\", function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "const corpo = pm.response.json();",
+                  "if (corpo.public_id) {",
+                  "    pm.collectionVariables.set(\"usuarioVinculo\", corpo.public_id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "POST — vincula usuário com papel",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{api}}/api/v1/clinicas/{{clinicaId}}/usuarios",
+              "host": [
+                "{{api}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "clinicas",
+                "{{clinicaId}}",
+                "usuarios"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"usuario_public_id\": \"{{usuarioVinculo}}\",\n  \"papel\": \"administrador\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 201\", function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "POST repetido → 409",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{api}}/api/v1/clinicas/{{clinicaId}}/usuarios",
+              "host": [
+                "{{api}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "clinicas",
+                "{{clinicaId}}",
+                "usuarios"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"usuario_public_id\": \"{{usuarioVinculo}}\",\n  \"papel\": \"comum\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 409\", function () {",
+                  "    pm.response.to.have.status(409);",
+                  "});",
+                  "pm.test(\"codigo vinculo_ja_existe\", function () {",
+                  "    pm.expect(pm.response.json().codigo).to.eql('vinculo_ja_existe');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "GET — quem atua na clínica",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{api}}/api/v1/clinicas/{{clinicaId}}/usuarios",
+              "host": [
+                "{{api}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "clinicas",
+                "{{clinicaId}}",
+                "usuarios"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "PUT — altera o papel",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{api}}/api/v1/clinicas/{{clinicaId}}/usuarios/{{usuarioVinculo}}",
+              "host": [
+                "{{api}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "clinicas",
+                "{{clinicaId}}",
+                "usuarios",
+                "{{usuarioVinculo}}"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"papel\": \"comum\",\n  \"ativo\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "DELETE — remove o vínculo",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{api}}/api/v1/clinicas/{{clinicaId}}/usuarios/{{usuarioVinculo}}",
+              "host": [
+                "{{api}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "clinicas",
+                "{{clinicaId}}",
+                "usuarios",
+                "{{usuarioVinculo}}"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 204\", function () {",
+                  "    pm.response.to.have.status(204);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "DELETE /clinicas/{id} → 204",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{api}}/api/v1/clinicas/{{clinicaId}}",
+              "host": [
+                "{{api}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "clinicas",
+                "{{clinicaId}}"
+              ]
+            },
+            "description": "Só remove clínica sem vínculos: as chaves apontando para `clinicas` são `ON DELETE CASCADE`, e apagar uma unidade com agenda levaria os agendamentos junto, em silêncio. Com vínculo, devolve 422."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 204\", function () {",
+                  "    pm.response.to.have.status(204);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "api",
+      "value": "http://127.0.0.1:8000",
+      "type": "string"
+    },
+    {
+      "key": "keycloak",
+      "value": "http://127.0.0.1:8080",
+      "type": "string"
+    },
+    {
+      "key": "realm",
+      "value": "fisioagenda",
+      "type": "string"
+    },
+    {
+      "key": "clientTestes",
+      "value": "fisioagenda-testes",
+      "type": "string"
+    },
+    {
+      "key": "segredoTestes",
+      "value": "",
+      "type": "string",
+      "description": "KEYCLOAK_TESTES_CLIENT_SECRET do .env da raiz"
+    },
+    {
+      "key": "email",
+      "value": "ana@clinicamovimento.com.br",
+      "type": "string"
+    },
+    {
+      "key": "senha",
+      "value": "FisioAgenda#2026",
+      "type": "string"
+    },
+    {
+      "key": "token",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "usuarioId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "clinicaId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "usuarioVinculo",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "emailUsuario",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "emailUsuarioNovo",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "emailVinculo",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "nomeClinica",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "nomeContaNova",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "emailContaNova",
+      "value": "",
+      "type": "string"
+    }
+  ]
+}

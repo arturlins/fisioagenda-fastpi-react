@@ -111,8 +111,33 @@ primeiro usuário — daí em diante, usuário é criado por quem já está dent
 | `/clinicas/{id}/usuarios` | POST, GET, PUT, DELETE — vínculo com papel por clínica |
 | `/auth/eu` | GET — quem sou e em quais clínicas atuo |
 
-`exemplos.http` traz uma requisição pronta para cada uma, incluindo os casos de erro. Abra no
-REST Client do VS Code ou no cliente HTTP do JetBrains.
+Três formas de exercitar, na ordem de menor atrito:
+
+| Ferramenta | Arquivo |
+|---|---|
+| **Postman** | `backend/fisioagenda.postman_collection.json` — 29 requisições, o login grava o token sozinho |
+| VS Code / JetBrains | `backend/exemplos.http` |
+| Navegador | `/docs`, com login real via Authorization Code + PKCE |
+
+**[`ROTEIRO.md`](ROTEIRO.md)** é o passo a passo completo: subir o ambiente, credenciais, o que
+rodar e onde cada requisito da disciplina está no código.
+
+### Dados de demonstração
+
+```bash
+uv run python -m scripts.semear             # conta, 2 clínicas, 4 usuários com vínculos
+uv run python -m scripts.semear --recriar   # apaga a conta de exemplo antes
+```
+
+Passa pelos serviços da aplicação, não por `INSERT` direto: os usuários criados logam de verdade
+no Keycloak. Um deles é administrador de uma clínica e usuário comum em outra — que é a forma
+mais direta de ver que o papel é **por clínica**, não global.
+
+A coleção do Postman é gerada, não editada à mão:
+
+```bash
+uv run python -m scripts.gerar_colecao_postman
+```
 
 ### Testes e verificações
 
