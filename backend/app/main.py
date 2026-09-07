@@ -19,6 +19,7 @@ from app.core.logging import configurar_logging
 from app.core.middleware import CorrelacaoMiddleware
 from app.core.plataforma import configurar_loop_de_eventos
 from app.db.session import encerrar_engine
+from app.dependencies import encerrar_cliente_http, obter_cache_de_chaves
 from app.exceptions.handlers import registrar_tratadores
 
 # Cobre quem importa a aplicação e cria o próprio loop (pytest, Alembic). O
@@ -31,11 +32,20 @@ _logger = logging.getLogger("fisioagenda")
 @asynccontextmanager
 async def _ciclo_de_vida(app: FastAPI) -> AsyncIterator[None]:
     config: Configuracao = app.state.config
+
+    # Carrega o JWKS na subida para que a primeira requisição autenticada não
+    # pague a ida ao Keycloak. Falhar aqui não impede a aplicação de subir: o
+    # Keycloak pode voltar, e /saude/pronto informa a situação enquanto isso.
+    chaves_ok = await obter_cache_de_chaves().aquecer()
+    if not chaves_ok:
+        _logger.warning("subindo sem as chaves do Keycloak; serão buscadas sob demanda")
+
     _logger.info(
         "aplicação iniciada",
         extra={"ambiente": config.ambiente.value, "versao": config.app_versao},
     )
     yield
+    await encerrar_cliente_http()
     await encerrar_engine()
     _logger.info("aplicação encerrada")
 
@@ -53,6 +63,13 @@ def criar_app(config: Configuracao | None = None) -> FastAPI:
         docs_url=None if config.e_producao else "/docs",
         redoc_url=None,
         openapi_url=None if config.e_producao else "/openapi.json",
+        # O /docs autentica pelo client público do frontend, com PKCE. O client
+        # confidencial da API não tem fluxo de navegador e não entra aqui.
+        swagger_ui_init_oauth={
+            "clientId": "fisioagenda-web",
+            "usePkceWithAuthorizationCodeGrant": True,
+            "scopes": "openid profile email",
+        },
     )
     app.state.config = config
 
