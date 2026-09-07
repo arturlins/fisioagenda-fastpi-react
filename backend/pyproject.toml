@@ -1,0 +1,71 @@
+[project]
+name = "fisioagenda-backend"
+version = "0.1.0"
+description = "API do FisioAgenda — agendamento de fisioterapia"
+requires-python = ">=3.13"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "sqlalchemy[asyncio]>=2.0.36",
+    "psycopg[binary,pool]>=3.2",
+    "alembic>=1.14",
+    "pydantic>=2.9",
+    "pydantic-settings>=2.6",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "httpx>=0.28",
+    "ruff>=0.8",
+    "mypy>=1.13",
+]
+
+# Aplicação, não biblioteca: não há nada para empacotar nem instalar.
+[tool.uv]
+package = false
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+
+[tool.ruff.lint]
+select = [
+    "E", "W",  # pycodestyle
+    "F",       # pyflakes
+    "I",       # isort
+    "N",       # pep8-naming
+    "UP",      # pyupgrade
+    "B",       # bugbear
+    "C4",      # comprehensions
+    "SIM",     # simplify
+    "TID",     # imports tidy
+    "RUF",     # ruff
+    "ASYNC",   # armadilhas de async
+    "S",       # bandit — segurança
+]
+ignore = [
+    "S101",  # assert: legítimo em teste
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S105", "S106"]  # credenciais de teste são fixas por natureza
+
+[tool.mypy]
+python_version = "3.13"
+strict = true
+warn_unreachable = true
+plugins = ["pydantic.mypy"]
+
+[[tool.mypy.overrides]]
+module = "tests.*"
+disallow_untyped_defs = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+addopts = "-q --strict-markers"
+markers = [
+    "keycloak: exige o Keycloak no ar (docker compose up -d)",
+]
