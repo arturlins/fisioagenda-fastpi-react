@@ -22,8 +22,10 @@ from app.db.session import obter_sessao
 from app.integrations.keycloak.admin import KeycloakAdmin
 from app.integrations.keycloak.jwks import CacheDeChaves
 from app.repositories.clinica_repository import ClinicaRepository
+from app.repositories.conta_repository import ContaRepository
 from app.repositories.usuario_repository import UsuarioRepository
 from app.services.autenticacao_service import AutenticacaoService
+from app.services.conta_service import ContaService
 
 Sessao = Annotated[AsyncSession, Depends(obter_sessao)]
 Config = Annotated[Configuracao, Depends(obter_configuracao)]
@@ -66,6 +68,19 @@ def obter_clinica_repository(sessao: Sessao) -> ClinicaRepository:
     return ClinicaRepository(sessao)
 
 
+def obter_conta_repository(sessao: Sessao) -> ContaRepository:
+    return ContaRepository(sessao)
+
+
+def obter_conta_service(
+    sessao: Sessao,
+    contas: Annotated[ContaRepository, Depends(obter_conta_repository)],
+    usuarios: Annotated[UsuarioRepository, Depends(obter_usuario_repository)],
+    keycloak: Annotated[KeycloakAdmin, Depends(obter_keycloak_admin)],
+) -> ContaService:
+    return ContaService(sessao, contas, usuarios, keycloak)
+
+
 def obter_autenticacao_service(
     repositorio: Annotated[UsuarioRepository, Depends(obter_usuario_repository)],
 ) -> AutenticacaoService:
@@ -75,3 +90,4 @@ def obter_autenticacao_service(
 CacheDeChavesDep = Annotated[CacheDeChaves, Depends(obter_cache_de_chaves)]
 KeycloakAdminDep = Annotated[KeycloakAdmin, Depends(obter_keycloak_admin)]
 AutenticacaoServiceDep = Annotated[AutenticacaoService, Depends(obter_autenticacao_service)]
+ContaServiceDep = Annotated[ContaService, Depends(obter_conta_service)]

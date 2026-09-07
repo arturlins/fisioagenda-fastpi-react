@@ -27,6 +27,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import TIMESTAMPTZ, Base, IdMixin, PublicIdMixin, SoftDeleteMixin, TimestampsMixin
 from app.models.enums import PAPEL_USUARIO, PapelUsuario
+from app.models.organizacao import Clinica
 
 
 class Usuario(Base, IdMixin, PublicIdMixin, TimestampsMixin, SoftDeleteMixin):
@@ -97,3 +98,4 @@ class ClinicaUsuario(Base, IdMixin, PublicIdMixin):
     )
 
     usuario: Mapped[Usuario] = relationship(back_populates="vinculos", lazy="raise")
+    clinica: Mapped[Clinica] = relationship(lazy="raise")

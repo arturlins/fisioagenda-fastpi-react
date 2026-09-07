@@ -13,6 +13,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api.v1.auth_controller import router as auth_router
 from app.api.v1.saude_controller import router as saude_router
 from app.core.config import Configuracao, obter_configuracao
 from app.core.logging import configurar_logging
@@ -85,6 +86,7 @@ def criar_app(config: Configuracao | None = None) -> FastAPI:
 
     registrar_tratadores(app)
     app.include_router(saude_router)
+    app.include_router(auth_router)
     return app
 
 
