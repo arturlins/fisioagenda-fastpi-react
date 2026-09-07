@@ -1,0 +1,76 @@
+name: fisioagenda
+
+services:
+  postgres:
+    image: postgres:18-alpine
+    container_name: fisioagenda-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: fisioagenda
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_SUPERUSER_PASSWORD:?defina POSTGRES_SUPERUSER_PASSWORD no .env}
+      APP_DB_USER: ${APP_DB_USER:-fisioagenda_app}
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD:?defina APP_DB_PASSWORD no .env}
+      KEYCLOAK_DB_USER: ${KEYCLOAK_DB_USER:-keycloak}
+      KEYCLOAK_DB_PASSWORD: ${KEYCLOAK_DB_PASSWORD:?defina KEYCLOAK_DB_PASSWORD no .env}
+      TZ: America/Maceio
+    # 5433 no host: a 5432 pode estar ocupada por uma instalação nativa.
+    # Preso a 127.0.0.1 — o banco não fica exposto na rede.
+    ports:
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - postgres-dados:/var/lib/postgresql
+      - ./db/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d fisioagenda"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 15s
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.4
+    container_name: fisioagenda-keycloak
+    restart: unless-stopped
+    # Os ${VAR} do realm JSON só são interpolados para as variáveis explicitamente
+    # liberadas aqui — sem o allowlist o Keycloak grava o placeholder literal como
+    # segredo do client, e a autenticação falha com "unauthorized_client".
+    command:
+      - start-dev
+      - --import-realm
+      - --spi-admin--allowed-system-variables=KEYCLOAK_BACKEND_CLIENT_SECRET,KEYCLOAK_TESTES_CLIENT_SECRET
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN_USER:-admin}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:?defina KEYCLOAK_ADMIN_PASSWORD no .env}
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
+      KC_DB_USERNAME: ${KEYCLOAK_DB_USER:-keycloak}
+      KC_DB_PASSWORD: ${KEYCLOAK_DB_PASSWORD:?defina KEYCLOAK_DB_PASSWORD no .env}
+      KC_HEALTH_ENABLED: "true"
+      # Lidos pelo realm-fisioagenda.json na importação.
+      KEYCLOAK_BACKEND_CLIENT_SECRET: ${KEYCLOAK_BACKEND_CLIENT_SECRET:?defina KEYCLOAK_BACKEND_CLIENT_SECRET no .env}
+      KEYCLOAK_TESTES_CLIENT_SECRET: ${KEYCLOAK_TESTES_CLIENT_SECRET:?defina KEYCLOAK_TESTES_CLIENT_SECRET no .env}
+      TZ: America/Maceio
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - ./keycloak:/opt/keycloak/data/import:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    # A imagem não traz curl nem wget; /dev/tcp do bash resolve.
+    # Desde a versão 25 o endpoint de saúde vive na porta de gerenciamento (9000).
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          exec 3<>/dev/tcp/127.0.0.1/9000 &&
+          printf 'GET /health/ready HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n' >&3 &&
+          grep -q '"status": "UP"' <&3
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 45s
+
+volumes:
+  postgres-dados:

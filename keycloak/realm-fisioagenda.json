@@ -1,0 +1,150 @@
+{
+  "realm": "fisioagenda",
+  "displayName": "FisioAgenda",
+  "enabled": true,
+  "sslRequired": "external",
+
+  "registrationAllowed": false,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "resetPasswordAllowed": true,
+  "editUsernameAllowed": false,
+  "verifyEmail": false,
+
+  "bruteForceProtected": true,
+  "permanentLockout": false,
+  "failureFactor": 5,
+  "waitIncrementSeconds": 60,
+  "maxFailureWaitSeconds": 900,
+
+  "passwordPolicy": "length(10) and notUsername and notEmail",
+
+  "accessTokenLifespan": 900,
+  "ssoSessionIdleTimeout": 1800,
+  "ssoSessionMaxLifespan": 36000,
+  "offlineSessionIdleTimeout": 2592000,
+
+  "roles": {
+    "realm": [
+      {
+        "name": "fisio-usuario",
+        "description": "Identifica um usuário do FisioAgenda. A permissão fina (papel por clínica) vive no banco da aplicação, não no token."
+      },
+      {
+        "name": "default-roles-fisioagenda",
+        "description": "Papéis concedidos automaticamente a todo usuário criado no realm.",
+        "composite": true,
+        "composites": {
+          "realm": ["offline_access", "fisio-usuario"],
+          "client": {
+            "account": ["view-profile", "manage-account"]
+          }
+        }
+      }
+    ]
+  },
+
+  "defaultRole": {
+    "name": "default-roles-fisioagenda",
+    "description": "Papéis concedidos automaticamente a todo usuário criado no realm.",
+    "composite": true,
+    "clientRole": false
+  },
+
+  "clients": [
+    {
+      "clientId": "fisioagenda-web",
+      "name": "FisioAgenda Web (React)",
+      "description": "Client público do frontend. Authorization Code + PKCE.",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "frontchannelLogout": true,
+      "redirectUris": [
+        "http://localhost:5173/*",
+        "http://127.0.0.1:5173/*",
+        "http://localhost:8000/docs/oauth2-redirect"
+      ],
+      "webOrigins": [
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:8000"
+      ],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "http://localhost:5173/*"
+      },
+      "protocolMappers": [
+        {
+          "name": "audience-backend",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.client.audience": "fisioagenda-backend",
+            "id.token.claim": "false",
+            "access.token.claim": "true",
+            "introspection.token.claim": "true"
+          }
+        }
+      ]
+    },
+
+    {
+      "clientId": "fisioagenda-backend",
+      "name": "FisioAgenda API",
+      "description": "Client confidencial da API. Service account usado apenas para a Admin API do Keycloak.",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "secret": "${KEYCLOAK_BACKEND_CLIENT_SECRET}",
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": true
+    },
+
+    {
+      "clientId": "fisioagenda-testes",
+      "name": "FisioAgenda — testes de integração",
+      "description": "Direct Access Grant para obter token de usuário nos testes. Existe SOMENTE no realm de desenvolvimento.",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "secret": "${KEYCLOAK_TESTES_CLIENT_SECRET}",
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": true,
+      "serviceAccountsEnabled": false,
+      "protocolMappers": [
+        {
+          "name": "audience-backend",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.client.audience": "fisioagenda-backend",
+            "id.token.claim": "false",
+            "access.token.claim": "true",
+            "introspection.token.claim": "true"
+          }
+        }
+      ]
+    }
+  ],
+
+  "users": [
+    {
+      "username": "service-account-fisioagenda-backend",
+      "enabled": true,
+      "serviceAccountClientId": "fisioagenda-backend",
+      "clientRoles": {
+        "realm-management": ["manage-users", "view-users", "query-users"]
+      }
+    }
+  ]
+}
