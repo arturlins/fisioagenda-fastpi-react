@@ -1,13 +1,16 @@
 """Mapper de usuário: entidade ⇄ DTO.
 
-Funções puras, sem lógica de negócio e sem tocar no banco — exatamente o papel
-do `AccountMapper` do projeto da aula. Se aqui aparecer um `if` que decide algo,
-a regra está no lugar errado.
+Funções puras, sem lógica de negócio e sem tocar no banco — o papel do
+`CustomerMapper` da aula.
+
+A conversão DTO → entidade acontece na camada web (Controller), como no projeto
+de referência: o Service passa a lidar só com entidades de domínio, sem conhecer
+os contratos de HTTP. As entidades que saem daqui são **transientes** — campos
+que o cliente não escolhe (`conta_id`, `keycloak_id`, `dono_da_conta`) são
+responsabilidade do Service.
 """
 
 from __future__ import annotations
-
-import uuid
 
 from app.models.acesso import ClinicaUsuario, Usuario
 from app.schemas.usuario import (
@@ -19,12 +22,13 @@ from app.schemas.usuario import (
 )
 
 
-def de_criar_request(dto: CriarUsuarioRequest, *, conta_id: int, keycloak_id: uuid.UUID) -> Usuario:
-    """`conta_id` e `keycloak_id` vêm de fora: um do contexto autenticado, o
-    outro do Keycloak. Nenhum dos dois é escolha do cliente."""
+def para_entidade(dto: CriarUsuarioRequest) -> Usuario:
+    """DTO de criação → entidade transiente.
+
+    Sem `senha`: a credencial não pertence à entidade, vive no Keycloak
+    (ADR-001). Ela viaja separada, do Controller para o Service.
+    """
     return Usuario(
-        conta_id=conta_id,
-        keycloak_id=keycloak_id,
         nome=dto.nome,
         email=str(dto.email),
         telefone=dto.telefone,
@@ -36,21 +40,19 @@ def de_criar_request(dto: CriarUsuarioRequest, *, conta_id: int, keycloak_id: uu
     )
 
 
-def aplicar_atualizacao(usuario: Usuario, dto: AtualizarUsuarioRequest) -> Usuario:
-    """Copia os campos editáveis para a entidade já carregada.
-
-    `dono_da_conta`, `conta_id` e `keycloak_id` não estão aqui: nenhum é editável
-    por requisição — quem se autopromovesse a dono teria a conta inteira.
-    """
-    usuario.nome = dto.nome
-    usuario.email = str(dto.email)
-    usuario.telefone = dto.telefone
-    usuario.e_profissional = dto.e_profissional
-    usuario.registro_conselho = dto.registro_conselho
-    usuario.especialidade = dto.especialidade
-    usuario.cor_agenda = dto.cor_agenda
-    usuario.ativo = dto.ativo
-    return usuario
+def de_atualizacao_para_entidade(dto: AtualizarUsuarioRequest) -> Usuario:
+    """DTO de atualização → entidade transiente, que o Service usa como fonte
+    dos novos valores ao atualizar a entidade já persistida."""
+    return Usuario(
+        nome=dto.nome,
+        email=str(dto.email),
+        telefone=dto.telefone,
+        e_profissional=dto.e_profissional,
+        registro_conselho=dto.registro_conselho,
+        especialidade=dto.especialidade,
+        cor_agenda=dto.cor_agenda,
+        ativo=dto.ativo,
+    )
 
 
 def para_resposta(usuario: Usuario) -> UsuarioResponse:
