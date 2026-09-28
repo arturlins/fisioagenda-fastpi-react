@@ -115,7 +115,7 @@ Três formas de exercitar, na ordem de menor atrito:
 
 | Ferramenta | Arquivo |
 |---|---|
-| **Postman** | `backend/fisioagenda.postman_collection.json` — 29 requisições, o login grava o token sozinho |
+| **Postman** | `backend/fisioagenda.postman_collection.json` — 40 requisições; o login grava o token sozinho e a pasta 1 demonstra o JWT |
 | VS Code / JetBrains | `backend/exemplos.http` |
 | Navegador | `/docs`, com login real via Authorization Code + PKCE |
 

@@ -46,9 +46,12 @@ def req(
     corpo: dict[str, Any] | None = None,
     eventos: list[dict[str, Any]] | None = None,
     sem_auth: bool = False,
+    bearer_da_variavel: str | None = None,
     descricao: str = "",
     query: list[dict[str, str]] | None = None,
 ) -> dict[str, Any]:
+    """`bearer_da_variavel` troca o Bearer herdado da coleção por outra variável — usado para
+    enviar tokens forjados sem sobrescrever o legítimo."""
     partes = [p for p in caminho.strip("/").split("/") if p]
     url: dict[str, Any] = {
         "raw": "{{api}}/" + caminho.strip("/"),
@@ -74,8 +77,126 @@ def req(
         }
     if sem_auth:
         requisicao["auth"] = {"type": "noauth"}
+    elif bearer_da_variavel:
+        requisicao["auth"] = {
+            "type": "bearer",
+            "bearer": [
+                {"key": "token", "value": "{{" + bearer_da_variavel + "}}", "type": "string"}
+            ],
+        }
 
     return {"name": nome, "request": requisicao, "event": eventos or [], "response": []}
+
+
+def keycloak_oidc(
+    nome: str,
+    metodo: str,
+    endpoint: str,
+    *,
+    formulario: list[tuple[str, str]] | None = None,
+    eventos: list[dict[str, Any]] | None = None,
+    descricao: str = "",
+) -> dict[str, Any]:
+    """Requisição direta ao Keycloak — endpoints OIDC do realm, sem Bearer."""
+    partes = ["realms", "{{realm}}", *endpoint.strip("/").split("/")]
+    requisicao: dict[str, Any] = {
+        "auth": {"type": "noauth"},
+        "method": metodo,
+        "header": [],
+        "url": {
+            "raw": "{{keycloak}}/" + "/".join(partes),
+            "host": ["{{keycloak}}"],
+            "path": partes,
+        },
+        "description": descricao,
+    }
+    if formulario is not None:
+        requisicao["body"] = {
+            "mode": "urlencoded",
+            "urlencoded": [{"key": k, "value": v} for k, v in formulario],
+        }
+    return {"name": nome, "request": requisicao, "event": eventos or [], "response": []}
+
+
+# --- JWT no sandbox do Postman ----------------------------------------------
+#
+# O sandbox não tem `Buffer`; base64url sai do crypto-js, que o Postman embute.
+# UTF-8 explícito porque o payload carrega nome com acento.
+
+JS_JWT = [
+    "const cj = require('crypto-js');",
+    "function b64urlParaTexto(s) {",
+    "    s = s.replace(/-/g, '+').replace(/_/g, '/');",
+    "    while (s.length % 4) { s += '='; }",
+    "    return cj.enc.Base64.parse(s).toString(cj.enc.Utf8);",
+    "}",
+    "function b64urlDePalavras(palavras) {",
+    r"    return cj.enc.Base64.stringify(palavras).replace(/=+$/, '').replace(/\+/g, '-').replace(/\//g, '_');",
+    "}",
+    "function b64urlDeTexto(texto) { return b64urlDePalavras(cj.enc.Utf8.parse(texto)); }",
+    "function decodificarJwt(jwt) {",
+    "    const partes = jwt.split('.');",
+    "    return {",
+    "        partes: partes,",
+    "        header: JSON.parse(b64urlParaTexto(partes[0])),",
+    "        payload: JSON.parse(b64urlParaTexto(partes[1])),",
+    "    };",
+    "}",
+    "function tokenLegitimo() {",
+    '    const t = pm.collectionVariables.get("token");',
+    "    if (!t) { throw new Error('Rode primeiro \"Login\": não há token para forjar.'); }",
+    "    return t;",
+    "}",
+]
+
+
+def forja(*linhas: str) -> dict[str, Any]:
+    """Pre-request que monta um token forjado em `tokenForjado` a partir do legítimo."""
+    return antes(*JS_JWT, *linhas)
+
+
+# Todo token recusado recebe a mesma resposta: o motivo exato fica só no log do
+# servidor. Distinguir "expirado" de "assinatura inválida" ensinaria o atacante.
+REJEITA_TOKEN = [
+    'pm.test("codigo nao_autenticado", function () {',
+    "    pm.expect(pm.response.json().codigo).to.eql('nao_autenticado');",
+    "});",
+    'pm.test("resposta não revela o motivo da recusa", function () {',
+    "    pm.expect(pm.response.json().mensagem).to.eql('Credencial ausente ou inválida.');",
+    "});",
+    'pm.test("WWW-Authenticate: Bearer (RFC 6750)", function () {',
+    "    pm.expect(pm.response.headers.get('WWW-Authenticate')).to.eql('Bearer');",
+    "});",
+]
+
+VISUALIZADOR_JWT = r"""
+<style>
+  body { font-family: -apple-system, 'Segoe UI', Roboto, sans-serif; background: #0d1117; color: #e6edf3; margin: 0; padding: 20px; }
+  h2 { font-size: 15px; letter-spacing: .04em; text-transform: uppercase; color: #8b949e; margin: 0 0 12px; }
+  .bruto { font-family: ui-monospace, Consolas, monospace; font-size: 12px; word-break: break-all; line-height: 1.6; background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 14px; }
+  .h { color: #ff7b72; } .p { color: #d2a8ff; } .s { color: #79c0ff; } .ponto { color: #e6edf3; }
+  .legenda { display: flex; gap: 18px; font-size: 12px; margin: 10px 0 22px; color: #8b949e; }
+  .legenda b { font-weight: 600; }
+  .grade { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  section { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 14px; overflow-x: auto; }
+  pre { margin: 0; font-size: 12px; font-family: ui-monospace, Consolas, monospace; }
+  table { width: 100%; border-collapse: collapse; margin-top: 22px; font-size: 13px; }
+  td, th { text-align: left; padding: 8px 10px; border-bottom: 1px solid #21262d; vertical-align: top; }
+  th { color: #8b949e; font-weight: 500; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
+  td code { color: #d2a8ff; } td.valor { font-family: ui-monospace, Consolas, monospace; font-size: 12px; word-break: break-all; }
+</style>
+<h2>JWT emitido pelo Keycloak</h2>
+<div class="bruto"><span class="h">{{h}}</span><span class="ponto">.</span><span class="p">{{p}}</span><span class="ponto">.</span><span class="s">{{s}}</span></div>
+<div class="legenda"><span class="h"><b>header</b></span><span class="p"><b>payload</b> (claims)</span><span class="s"><b>assinatura</b> {{alg}} — só a chave privada do realm produz</span></div>
+<div class="grade">
+  <section><h2>Header</h2><pre>{{header}}</pre></section>
+  <section><h2>Payload</h2><pre>{{payload}}</pre></section>
+</div>
+<table>
+  <tr><th>Claim</th><th>Valor</th><th>O que a API confere</th></tr>
+  {{#each claims}}<tr><td><code>{{nome}}</code></td><td class="valor">{{valor}}</td><td>{{papel}}</td></tr>{{/each}}
+</table>
+"""
 
 
 # --- pastas ------------------------------------------------------------------
@@ -97,16 +218,82 @@ saude = {
 }
 
 autenticacao = {
-    "name": "1 · Autenticação",
+    "name": "1 · Autenticação JWT (Keycloak)",
     "description": (
-        "Rode o **Login** primeiro: ele grava o token nas variáveis da coleção e todas as "
-        "demais requisições passam a ir autenticadas.\n\n"
+        "Demonstra, em ordem, como a API autentica com **JSON Web Token**:\n\n"
+        "1. **Descoberta OIDC** — o Keycloak publica emissor, endpoints e onde estão as chaves.\n"
+        "2. **JWKS** — as chaves *públicas* do realm. É com elas que a API confere a assinatura; "
+        "a chave privada nunca sai do Keycloak.\n"
+        "3. **Login** — o Keycloak emite o JWT assinado em RS256. A aba **Visualize** da "
+        "resposta mostra o token decodificado: header, payload e o papel de cada claim.\n"
+        "4. **Uso do token** — `Authorization: Bearer <jwt>`. A API valida assinatura, `iss`, "
+        "`aud`, `exp` e `iat` **localmente**, sem consultar o Keycloak a cada requisição; o "
+        "`sub` do token localiza o usuário no banco.\n"
+        "5. **Ataques recusados** — cada requisição forja um token a partir do legítimo e "
+        "comprova que a API devolve 401, sempre com a mesma resposta.\n"
+        "6. **Refresh** — um novo access token sem pedir a senha de novo.\n\n"
+        "O token vale 15 minutos (`accessTokenLifespan` do realm). Expirou? Rode o **Login** "
+        "de novo.\n\n"
         "Se o banco foi semeado (`uv run python -m scripts.semear`), o login já funciona com "
         "as credenciais padrão. Senão, rode antes o **Registro de conta**."
     ),
     "item": [
+        keycloak_oidc(
+            "Descoberta OIDC (.well-known)",
+            "GET",
+            ".well-known/openid-configuration",
+            descricao=(
+                "Documento público do OpenID Connect. A API usa o `issuer` como valor exigido "
+                "no claim `iss` e o `jwks_uri` para buscar as chaves de verificação."
+            ),
+            eventos=[
+                espera(
+                    200,
+                    [
+                        "const c = pm.response.json();",
+                        'pm.test("emissor é o realm fisioagenda", function () {',
+                        "    pm.expect(c.issuer).to.eql(pm.collectionVariables.get('keycloak') + '/realms/' + pm.collectionVariables.get('realm'));",
+                        "});",
+                        'pm.test("publica jwks_uri e aceita RS256", function () {',
+                        "    pm.expect(c.jwks_uri).to.include('/protocol/openid-connect/certs');",
+                        "    pm.expect(c.id_token_signing_alg_values_supported).to.include('RS256');",
+                        "});",
+                    ],
+                )
+            ],
+        ),
+        keycloak_oidc(
+            "JWKS — chaves públicas de assinatura",
+            "GET",
+            "protocol/openid-connect/certs",
+            descricao=(
+                "JSON Web Key Set. A API guarda estas chaves em cache e as indexa pelo `kid`: o "
+                "header de cada JWT diz com qual chave foi assinado. `kid` desconhecido força "
+                "uma recarga, com intervalo mínimo para não virar vetor de carga contra o "
+                "Keycloak."
+            ),
+            eventos=[
+                espera(
+                    200,
+                    [
+                        "const chaves = pm.response.json().keys;",
+                        "const assinatura = chaves.filter(k => k.use === 'sig' && k.alg === 'RS256');",
+                        'pm.test("há chave RSA de assinatura RS256", function () {',
+                        "    pm.expect(assinatura.length).to.be.above(0);",
+                        "    pm.expect(assinatura[0].kty).to.eql('RSA');",
+                        "});",
+                        'pm.test("só material público — nada de chave privada", function () {',
+                        "    chaves.forEach(k => pm.expect(k).to.not.have.any.keys('d', 'p', 'q', 'dp', 'dq', 'qi'));",
+                        "});",
+                        'pm.collectionVariables.set("jwksKids", JSON.stringify(assinatura.map(k => k.kid)));',
+                        "// Material para a demonstração de confusão de algoritmo, adiante.",
+                        'pm.collectionVariables.set("chavePublicaRealm", assinatura[0].x5c[0]);',
+                    ],
+                )
+            ],
+        ),
         {
-            "name": "Login (obtém o token)",
+            "name": "Login — Keycloak emite o JWT",
             "request": {
                 "auth": {"type": "noauth"},
                 "method": "POST",
@@ -129,7 +316,12 @@ autenticacao = {
                 "description": (
                     "Direct Access Grant no client `fisioagenda-testes`, que existe apenas no "
                     "realm de desenvolvimento. Em produção o fluxo é Authorization Code + PKCE "
-                    "pelo frontend.\n\n"
+                    "pelo frontend — o token resultante é o mesmo.\n\n"
+                    "A senha vai ao **Keycloak**, nunca à API: não existe senha no banco do "
+                    "FisioAgenda.\n\n"
+                    "Depois de enviar, abra a aba **Visualize** da resposta para ver o JWT "
+                    "decodificado. Os testes conferem a estrutura do token; o access token e o "
+                    "refresh token ficam gravados nas variáveis da coleção.\n\n"
                     "Preencha `segredoTestes` com o `KEYCLOAK_TESTES_CLIENT_SECRET` do `.env` "
                     "da raiz do projeto."
                 ),
@@ -137,12 +329,68 @@ autenticacao = {
             "event": [
                 teste(
                     "t",
+                    *JS_JWT,
                     'pm.test("login bem-sucedido", function () {',
                     "    pm.response.to.have.status(200);",
                     "});",
                     "const corpo = pm.response.json();",
                     "if (corpo.access_token) {",
                     '    pm.collectionVariables.set("token", corpo.access_token);',
+                    '    pm.collectionVariables.set("refreshToken", corpo.refresh_token);',
+                    "    const jwt = decodificarJwt(corpo.access_token);",
+                    "    const agora = Math.floor(Date.now() / 1000);",
+                    "",
+                    'pm.test("token_type Bearer", function () {',
+                    "    pm.expect(corpo.token_type).to.eql('Bearer');",
+                    "});",
+                    'pm.test("JWT tem três partes: header.payload.assinatura", function () {',
+                    "    pm.expect(jwt.partes).to.have.lengthOf(3);",
+                    "    pm.expect(jwt.partes[2].length).to.be.above(0);",
+                    "});",
+                    'pm.test("header: assinatura assimétrica RS256 com kid", function () {',
+                    "    pm.expect(jwt.header.alg).to.eql('RS256');",
+                    "    pm.expect(jwt.header.typ).to.eql('JWT');",
+                    "    pm.expect(jwt.header.kid).to.be.a('string');",
+                    "});",
+                    'pm.test("kid aponta para uma chave publicada no JWKS", function () {',
+                    '    const kids = JSON.parse(pm.collectionVariables.get("jwksKids") || "[]");',
+                    "    if (kids.length === 0) { return; }  // JWKS não foi consultado nesta execução",
+                    "    pm.expect(kids).to.include(jwt.header.kid);",
+                    "});",
+                    'pm.test("iss é o realm fisioagenda", function () {',
+                    "    pm.expect(jwt.payload.iss).to.eql(pm.collectionVariables.get('keycloak') + '/realms/' + pm.collectionVariables.get('realm'));",
+                    "});",
+                    'pm.test("aud inclui a API (fisioagenda-backend)", function () {',
+                    "    pm.expect([].concat(jwt.payload.aud)).to.include('fisioagenda-backend');",
+                    "});",
+                    'pm.test("sub é o uuid do usuário no Keycloak", function () {',
+                    "    pm.expect(jwt.payload.sub).to.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);",
+                    "});",
+                    'pm.test("exp no futuro, coerente com expires_in", function () {',
+                    "    pm.expect(jwt.payload.exp).to.be.above(agora);",
+                    "    pm.expect(jwt.payload.exp - jwt.payload.iat).to.eql(corpo.expires_in);",
+                    "});",
+                    'pm.test("payload não carrega senha", function () {',
+                    "    pm.expect(JSON.stringify(jwt.payload)).to.not.include(pm.collectionVariables.get('senha'));",
+                    "});",
+                    "",
+                    "    const quando = s => new Date(s * 1000).toISOString().replace('T', ' ').slice(0, 19) + ' UTC';",
+                    "    const p = jwt.payload;",
+                    "    pm.visualizer.set(" + json.dumps(VISUALIZADOR_JWT.strip()) + ", {",
+                    "        h: jwt.partes[0], p: jwt.partes[1], s: jwt.partes[2], alg: jwt.header.alg,",
+                    "        header: JSON.stringify(jwt.header, null, 2),",
+                    "        payload: JSON.stringify(p, null, 2),",
+                    "        claims: [",
+                    "            { nome: 'alg / kid', valor: jwt.header.alg + ' / ' + jwt.header.kid, papel: 'Só RS256/384/512 é aceito; o kid escolhe a chave pública no JWKS.' },",
+                    "            { nome: 'iss', valor: p.iss, papel: 'Precisa ser exatamente o realm configurado.' },",
+                    "            { nome: 'aud', valor: [].concat(p.aud).join(', '), papel: 'Precisa conter fisioagenda-backend — token emitido para outra API é recusado.' },",
+                    "            { nome: 'sub', valor: p.sub, papel: 'Identidade. Liga o token ao usuário local (keycloak_id).' },",
+                    "            { nome: 'azp', valor: p.azp, papel: 'Client que pediu o token.' },",
+                    "            { nome: 'iat', valor: quando(p.iat), papel: 'Emitido em.' },",
+                    "            { nome: 'exp', valor: quando(p.exp), papel: 'Depois disso, 401.' },",
+                    "            { nome: 'realm_access.roles', valor: ((p.realm_access || {}).roles || []).join(', '), papel: 'Informativo. O papel por clínica vem do banco, não do token.' },",
+                    "        ],",
+                    "    });",
                     '    console.log("token gravado; as demais requisições já vão autenticadas");',
                     "}",
                 ),
@@ -150,18 +398,27 @@ autenticacao = {
             "response": [],
         },
         req(
-            "GET /auth/eu — perfil e vínculos",
+            "GET /auth/eu — token válido → 200",
             "GET",
             "api/v1/auth/eu",
-            descricao="Quem sou e em quais clínicas atuo, com o papel em cada uma.",
+            descricao=(
+                "Mesma requisição, agora com `Authorization: Bearer {{token}}` herdado da "
+                "coleção. A API valida o JWT e usa o `sub` para achar o usuário no banco. "
+                "Resposta: quem sou e em quais clínicas atuo, com o papel em cada uma."
+            ),
             eventos=[
                 espera(
                     200,
                     [
+                        *JS_JWT,
                         'pm.test("traz usuário e vínculos", function () {',
                         "    const c = pm.response.json();",
                         "    pm.expect(c).to.have.property('usuario');",
                         "    pm.expect(c).to.have.property('vinculos');",
+                        "});",
+                        'pm.test("usuário resolvido é o dono do token", function () {',
+                        '    const email = decodificarJwt(pm.collectionVariables.get("token")).payload.email;',
+                        "    pm.expect(pm.response.json().usuario.email).to.eql(email);",
                         "});",
                     ],
                 )
@@ -173,16 +430,143 @@ autenticacao = {
             "api/v1/auth/eu",
             sem_auth=True,
             descricao="Erro no formato padronizado, com `codigo`, `caminho` e `id_correlacao`.",
+            eventos=[espera(401, REJEITA_TOKEN)],
+        ),
+        req(
+            "Token malformado → 401",
+            "GET",
+            "api/v1/auth/eu",
+            bearer_da_variavel="tokenForjado",
+            descricao="Um Bearer que nem tem a forma de JWT.",
             eventos=[
-                espera(
-                    401,
-                    [
-                        'pm.test("codigo nao_autenticado", function () {',
-                        "    pm.expect(pm.response.json().codigo).to.eql('nao_autenticado');",
-                        "});",
-                    ],
-                )
+                antes('pm.collectionVariables.set("tokenForjado", "isto-nao-e-um-jwt");'),
+                espera(401, REJEITA_TOKEN),
             ],
+        ),
+        req(
+            "Payload adulterado (escalada de privilégio) → 401",
+            "GET",
+            "api/v1/auth/eu",
+            bearer_da_variavel="tokenForjado",
+            descricao=(
+                "Pega o token legítimo, troca o e-mail, adiciona o papel `admin` e empurra o "
+                "`exp` um ano para frente — **mantendo a assinatura original**. O payload de "
+                "um JWT é só base64url: qualquer um lê e edita. O que impede a fraude é a "
+                "assinatura, que deixa de bater com o conteúdo."
+            ),
+            eventos=[
+                forja(
+                    "const jwt = decodificarJwt(tokenLegitimo());",
+                    "const p = jwt.payload;",
+                    "p.email = 'invasor@exemplo.com.br';",
+                    "p.realm_access = { roles: ((p.realm_access || {}).roles || []).concat('admin') };",
+                    "p.exp = p.exp + 365 * 24 * 3600;",
+                    "const forjado = [jwt.partes[0], b64urlDeTexto(JSON.stringify(p)), jwt.partes[2]].join('.');",
+                    'pm.collectionVariables.set("tokenForjado", forjado);',
+                    "console.log('payload adulterado', p);",
+                ),
+                espera(401, REJEITA_TOKEN),
+            ],
+        ),
+        req(
+            "Assinatura corrompida → 401",
+            "GET",
+            "api/v1/auth/eu",
+            bearer_da_variavel="tokenForjado",
+            descricao="Header e payload intactos; só os últimos bytes da assinatura mudam.",
+            eventos=[
+                forja(
+                    "const partes = tokenLegitimo().split('.');",
+                    "const s = partes[2];",
+                    "partes[2] = s.slice(0, -6) + (s.endsWith('AAAAAA') ? 'BBBBBB' : 'AAAAAA');",
+                    'pm.collectionVariables.set("tokenForjado", partes.join("."));',
+                ),
+                espera(401, REJEITA_TOKEN),
+            ],
+        ),
+        req(
+            'alg "none" (token sem assinatura) → 401',
+            "GET",
+            "api/v1/auth/eu",
+            bearer_da_variavel="tokenForjado",
+            descricao=(
+                "Ataque clássico: declarar no header que o token não é assinado e mandar a "
+                "assinatura vazia. Bibliotecas que confiam no `alg` do próprio token aceitam. "
+                "A API só aceita a lista fixa RS256/RS384/RS512."
+            ),
+            eventos=[
+                forja(
+                    "const partes = tokenLegitimo().split('.');",
+                    "const header = b64urlDeTexto(JSON.stringify({ alg: 'none', typ: 'JWT' }));",
+                    'pm.collectionVariables.set("tokenForjado", header + "." + partes[1] + ".");',
+                ),
+                espera(401, REJEITA_TOKEN),
+            ],
+        ),
+        req(
+            "Confusão de algoritmo HS256 → 401",
+            "GET",
+            "api/v1/auth/eu",
+            bearer_da_variavel="tokenForjado",
+            descricao=(
+                "O atacante troca `alg` para HS256 (HMAC, simétrico) e assina com a **chave "
+                "pública** do realm — que qualquer um baixa do JWKS. Um servidor que usasse a "
+                "mesma chave para verificar sem fixar o algoritmo aceitaria. Aqui, HS* é "
+                "recusado antes de qualquer verificação."
+            ),
+            eventos=[
+                forja(
+                    "const jwt = decodificarJwt(tokenLegitimo());",
+                    'const chave = pm.collectionVariables.get("chavePublicaRealm");',
+                    "if (!chave) { throw new Error('Rode antes \"JWKS — chaves públicas de assinatura\".'); }",
+                    "const header = b64urlDeTexto(JSON.stringify({ alg: 'HS256', typ: 'JWT', kid: jwt.header.kid }));",
+                    "const conteudo = header + '.' + jwt.partes[1];",
+                    "const assinatura = b64urlDePalavras(cj.HmacSHA256(conteudo, chave));",
+                    'pm.collectionVariables.set("tokenForjado", conteudo + "." + assinatura);',
+                ),
+                espera(401, REJEITA_TOKEN),
+            ],
+        ),
+        keycloak_oidc(
+            "Refresh — novo access token sem senha",
+            "POST",
+            "protocol/openid-connect/token",
+            formulario=[
+                ("grant_type", "refresh_token"),
+                ("client_id", "{{clientTestes}}"),
+                ("client_secret", "{{segredoTestes}}"),
+                ("refresh_token", "{{refreshToken}}"),
+            ],
+            descricao=(
+                "O access token é curto de propósito (15 min): se vazar, a janela é pequena. O "
+                "refresh token, guardado pelo cliente, obtém um novo sem pedir a senha. O "
+                "Keycloak rotaciona os dois; a coleção passa a usar o novo par."
+            ),
+            eventos=[
+                teste(
+                    "t",
+                    *JS_JWT,
+                    'pm.test("status 200", function () {',
+                    "    pm.response.to.have.status(200);",
+                    "});",
+                    "const corpo = pm.response.json();",
+                    'const anterior = pm.collectionVariables.get("token");',
+                    'pm.test("emite um access token novo, do mesmo usuário", function () {',
+                    "    pm.expect(corpo.access_token).to.not.eql(anterior);",
+                    "    pm.expect(decodificarJwt(corpo.access_token).payload.sub).to.eql(decodificarJwt(anterior).payload.sub);",
+                    "});",
+                    "if (corpo.access_token) {",
+                    '    pm.collectionVariables.set("token", corpo.access_token);',
+                    '    pm.collectionVariables.set("refreshToken", corpo.refresh_token);',
+                    "}",
+                ),
+            ],
+        ),
+        req(
+            "GET /auth/eu com o token renovado → 200",
+            "GET",
+            "api/v1/auth/eu",
+            eventos=[espera(200)],
         ),
         req(
             "POST /auth/registro-conta — única rota pública",
@@ -558,6 +942,52 @@ vinculos = {
     ],
 }
 
+encerramento = {
+    "name": "5 · Logout (fim da sessão JWT)",
+    "description": (
+        "Fica por último para não derrubar a sessão das pastas anteriores.\n\n"
+        "O logout encerra a **sessão** no Keycloak e invalida o refresh token. O access token "
+        "já emitido continua válido até o `exp`: a API verifica o JWT localmente, sem "
+        "consultar o Keycloak — é isso que torna a validação barata e sem estado. O custo "
+        "dessa escolha é limitado pela vida curta do token (15 min)."
+    ),
+    "item": [
+        keycloak_oidc(
+            "Logout — encerra a sessão no Keycloak",
+            "POST",
+            "protocol/openid-connect/logout",
+            formulario=[
+                ("client_id", "{{clientTestes}}"),
+                ("client_secret", "{{segredoTestes}}"),
+                ("refresh_token", "{{refreshToken}}"),
+            ],
+            eventos=[espera(204)],
+        ),
+        keycloak_oidc(
+            "Refresh após logout → 400 invalid_grant",
+            "POST",
+            "protocol/openid-connect/token",
+            formulario=[
+                ("grant_type", "refresh_token"),
+                ("client_id", "{{clientTestes}}"),
+                ("client_secret", "{{segredoTestes}}"),
+                ("refresh_token", "{{refreshToken}}"),
+            ],
+            descricao="A sessão acabou: o refresh token não renova mais nada.",
+            eventos=[
+                espera(
+                    400,
+                    [
+                        'pm.test("invalid_grant", function () {',
+                        "    pm.expect(pm.response.json().error).to.eql('invalid_grant');",
+                        "});",
+                    ],
+                )
+            ],
+        ),
+    ],
+}
+
 colecao: dict[str, Any] = {
     "info": {
         "name": "FisioAgenda — API",
@@ -572,8 +1002,15 @@ colecao: dict[str, Any] = {
             "4. Suba a API: `uv run python servidor.py`\n"
             "5. Preencha a variável **segredoTestes** desta coleção com o "
             "`KEYCLOAK_TESTES_CLIENT_SECRET` do `.env` da raiz\n"
-            "6. Rode **1 · Autenticação → Login**. O token é gravado automaticamente e as "
-            "demais requisições já vão autenticadas.\n\n"
+            "6. Rode a pasta **1 · Autenticação JWT** (ou só o **Login**). O token é gravado "
+            "automaticamente e as demais requisições já vão autenticadas.\n\n"
+            "## Autenticação\n\n"
+            "A API não tem tela de login nem guarda senha. Quem autentica é o **Keycloak**, que "
+            "emite um **JWT** assinado em RS256; a coleção o envia como "
+            "`Authorization: Bearer <token>` (configurado aqui, na raiz da coleção). A API "
+            "confere a assinatura com as chaves públicas do realm (JWKS) e valida `iss`, `aud`, "
+            "`exp`, `iat` e `sub`. A pasta 1 mostra o token decodificado — aba **Visualize** do "
+            "Login — e prova que tokens forjados são recusados.\n\n"
             "## Ordem sugerida\n\n"
             "As pastas estão numeradas. Cada uma pode ser executada inteira pelo *Runner*; as "
             "requisições encadeiam `public_id` entre si por variáveis de coleção.\n\n"
@@ -593,7 +1030,7 @@ colecao: dict[str, Any] = {
         "type": "bearer",
         "bearer": [{"key": "token", "value": "{{token}}", "type": "string"}],
     },
-    "item": [saude, autenticacao, usuarios, clinicas, vinculos],
+    "item": [saude, autenticacao, usuarios, clinicas, vinculos, encerramento],
     "variable": [
         {"key": "api", "value": "http://127.0.0.1:8000", "type": "string"},
         {"key": "keycloak", "value": "http://127.0.0.1:8080", "type": "string"},
@@ -608,6 +1045,10 @@ colecao: dict[str, Any] = {
         {"key": "email", "value": "ana@clinicamovimento.com.br", "type": "string"},
         {"key": "senha", "value": "FisioAgenda#2026", "type": "string"},
         {"key": "token", "value": "", "type": "string"},
+        {"key": "refreshToken", "value": "", "type": "string"},
+        {"key": "tokenForjado", "value": "", "type": "string"},
+        {"key": "jwksKids", "value": "", "type": "string"},
+        {"key": "chavePublicaRealm", "value": "", "type": "string"},
         {"key": "usuarioId", "value": "", "type": "string"},
         {"key": "clinicaId", "value": "", "type": "string"},
         {"key": "usuarioVinculo", "value": "", "type": "string"},

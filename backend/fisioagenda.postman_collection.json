@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "FisioAgenda — API",
-    "description": "# FisioAgenda\n\nAPI de agendamento de fisioterapia. Multi-clínica, uso interno, autenticação delegada ao Keycloak.\n\n## Antes de começar\n\n1. Na raiz do projeto: `docker compose up -d`\n2. Em `backend/`: `uv run alembic upgrade head`\n3. Dados de demonstração: `uv run python -m scripts.semear`\n4. Suba a API: `uv run python servidor.py`\n5. Preencha a variável **segredoTestes** desta coleção com o `KEYCLOAK_TESTES_CLIENT_SECRET` do `.env` da raiz\n6. Rode **1 · Autenticação → Login**. O token é gravado automaticamente e as demais requisições já vão autenticadas.\n\n## Ordem sugerida\n\nAs pastas estão numeradas. Cada uma pode ser executada inteira pelo *Runner*; as requisições encadeiam `public_id` entre si por variáveis de coleção.\n\n## Detalhes que evitam surpresa\n\n- Falha de validação devolve **422**, não 400 — é o idiomático do FastAPI, equivalente ao `MethodArgumentNotValidException` do Spring.\n- E-mail em domínio reservado (`.local`, `localhost`, `.test`) é recusado: são domínios que não recebem e-mail.\n- Senha exige no mínimo 10 caracteres, espelhando a política do realm.\n- Recurso de outra conta responde **404**, não 403: confirmar que existe já seria informação demais.\n- `DELETE` devolve 204 sem corpo — resposta vazia é o esperado.",
+    "description": "# FisioAgenda\n\nAPI de agendamento de fisioterapia. Multi-clínica, uso interno, autenticação delegada ao Keycloak.\n\n## Antes de começar\n\n1. Na raiz do projeto: `docker compose up -d`\n2. Em `backend/`: `uv run alembic upgrade head`\n3. Dados de demonstração: `uv run python -m scripts.semear`\n4. Suba a API: `uv run python servidor.py`\n5. Preencha a variável **segredoTestes** desta coleção com o `KEYCLOAK_TESTES_CLIENT_SECRET` do `.env` da raiz\n6. Rode a pasta **1 · Autenticação JWT** (ou só o **Login**). O token é gravado automaticamente e as demais requisições já vão autenticadas.\n\n## Autenticação\n\nA API não tem tela de login nem guarda senha. Quem autentica é o **Keycloak**, que emite um **JWT** assinado em RS256; a coleção o envia como `Authorization: Bearer <token>` (configurado aqui, na raiz da coleção). A API confere a assinatura com as chaves públicas do realm (JWKS) e valida `iss`, `aud`, `exp`, `iat` e `sub`. A pasta 1 mostra o token decodificado — aba **Visualize** do Login — e prova que tokens forjados são recusados.\n\n## Ordem sugerida\n\nAs pastas estão numeradas. Cada uma pode ser executada inteira pelo *Runner*; as requisições encadeiam `public_id` entre si por variáveis de coleção.\n\n## Detalhes que evitam surpresa\n\n- Falha de validação devolve **422**, não 400 — é o idiomático do FastAPI, equivalente ao `MethodArgumentNotValidException` do Spring.\n- E-mail em domínio reservado (`.local`, `localhost`, `.test`) é recusado: são domínios que não recebem e-mail.\n- Senha exige no mínimo 10 caracteres, espelhando a política do realm.\n- Recurso de outra conta responde **404**, não 403: confirmar que existe já seria informação demais.\n- `DELETE` devolve 204 sem corpo — resposta vazia é o esperado.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "auth": {
@@ -91,11 +91,106 @@
       ]
     },
     {
-      "name": "1 · Autenticação",
-      "description": "Rode o **Login** primeiro: ele grava o token nas variáveis da coleção e todas as demais requisições passam a ir autenticadas.\n\nSe o banco foi semeado (`uv run python -m scripts.semear`), o login já funciona com as credenciais padrão. Senão, rode antes o **Registro de conta**.",
+      "name": "1 · Autenticação JWT (Keycloak)",
+      "description": "Demonstra, em ordem, como a API autentica com **JSON Web Token**:\n\n1. **Descoberta OIDC** — o Keycloak publica emissor, endpoints e onde estão as chaves.\n2. **JWKS** — as chaves *públicas* do realm. É com elas que a API confere a assinatura; a chave privada nunca sai do Keycloak.\n3. **Login** — o Keycloak emite o JWT assinado em RS256. A aba **Visualize** da resposta mostra o token decodificado: header, payload e o papel de cada claim.\n4. **Uso do token** — `Authorization: Bearer <jwt>`. A API valida assinatura, `iss`, `aud`, `exp` e `iat` **localmente**, sem consultar o Keycloak a cada requisição; o `sub` do token localiza o usuário no banco.\n5. **Ataques recusados** — cada requisição forja um token a partir do legítimo e comprova que a API devolve 401, sempre com a mesma resposta.\n6. **Refresh** — um novo access token sem pedir a senha de novo.\n\nO token vale 15 minutos (`accessTokenLifespan` do realm). Expirou? Rode o **Login** de novo.\n\nSe o banco foi semeado (`uv run python -m scripts.semear`), o login já funciona com as credenciais padrão. Senão, rode antes o **Registro de conta**.",
       "item": [
         {
-          "name": "Login (obtém o token)",
+          "name": "Descoberta OIDC (.well-known)",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{keycloak}}/realms/{{realm}}/.well-known/openid-configuration",
+              "host": [
+                "{{keycloak}}"
+              ],
+              "path": [
+                "realms",
+                "{{realm}}",
+                ".well-known",
+                "openid-configuration"
+              ]
+            },
+            "description": "Documento público do OpenID Connect. A API usa o `issuer` como valor exigido no claim `iss` e o `jwks_uri` para buscar as chaves de verificação."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "const c = pm.response.json();",
+                  "pm.test(\"emissor é o realm fisioagenda\", function () {",
+                  "    pm.expect(c.issuer).to.eql(pm.collectionVariables.get('keycloak') + '/realms/' + pm.collectionVariables.get('realm'));",
+                  "});",
+                  "pm.test(\"publica jwks_uri e aceita RS256\", function () {",
+                  "    pm.expect(c.jwks_uri).to.include('/protocol/openid-connect/certs');",
+                  "    pm.expect(c.id_token_signing_alg_values_supported).to.include('RS256');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "JWKS — chaves públicas de assinatura",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{keycloak}}/realms/{{realm}}/protocol/openid-connect/certs",
+              "host": [
+                "{{keycloak}}"
+              ],
+              "path": [
+                "realms",
+                "{{realm}}",
+                "protocol",
+                "openid-connect",
+                "certs"
+              ]
+            },
+            "description": "JSON Web Key Set. A API guarda estas chaves em cache e as indexa pelo `kid`: o header de cada JWT diz com qual chave foi assinado. `kid` desconhecido força uma recarga, com intervalo mínimo para não virar vetor de carga contra o Keycloak."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "const chaves = pm.response.json().keys;",
+                  "const assinatura = chaves.filter(k => k.use === 'sig' && k.alg === 'RS256');",
+                  "pm.test(\"há chave RSA de assinatura RS256\", function () {",
+                  "    pm.expect(assinatura.length).to.be.above(0);",
+                  "    pm.expect(assinatura[0].kty).to.eql('RSA');",
+                  "});",
+                  "pm.test(\"só material público — nada de chave privada\", function () {",
+                  "    chaves.forEach(k => pm.expect(k).to.not.have.any.keys('d', 'p', 'q', 'dp', 'dq', 'qi'));",
+                  "});",
+                  "pm.collectionVariables.set(\"jwksKids\", JSON.stringify(assinatura.map(k => k.kid)));",
+                  "// Material para a demonstração de confusão de algoritmo, adiante.",
+                  "pm.collectionVariables.set(\"chavePublicaRealm\", assinatura[0].x5c[0]);"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Login — Keycloak emite o JWT",
           "request": {
             "auth": {
               "type": "noauth"
@@ -140,7 +235,7 @@
                 "token"
               ]
             },
-            "description": "Direct Access Grant no client `fisioagenda-testes`, que existe apenas no realm de desenvolvimento. Em produção o fluxo é Authorization Code + PKCE pelo frontend.\n\nPreencha `segredoTestes` com o `KEYCLOAK_TESTES_CLIENT_SECRET` do `.env` da raiz do projeto."
+            "description": "Direct Access Grant no client `fisioagenda-testes`, que existe apenas no realm de desenvolvimento. Em produção o fluxo é Authorization Code + PKCE pelo frontend — o token resultante é o mesmo.\n\nA senha vai ao **Keycloak**, nunca à API: não existe senha no banco do FisioAgenda.\n\nDepois de enviar, abra a aba **Visualize** da resposta para ver o JWT decodificado. Os testes conferem a estrutura do token; o access token e o refresh token ficam gravados nas variáveis da coleção.\n\nPreencha `segredoTestes` com o `KEYCLOAK_TESTES_CLIENT_SECRET` do `.env` da raiz do projeto."
           },
           "event": [
             {
@@ -148,12 +243,90 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
+                  "const cj = require('crypto-js');",
+                  "function b64urlParaTexto(s) {",
+                  "    s = s.replace(/-/g, '+').replace(/_/g, '/');",
+                  "    while (s.length % 4) { s += '='; }",
+                  "    return cj.enc.Base64.parse(s).toString(cj.enc.Utf8);",
+                  "}",
+                  "function b64urlDePalavras(palavras) {",
+                  "    return cj.enc.Base64.stringify(palavras).replace(/=+$/, '').replace(/\\+/g, '-').replace(/\\//g, '_');",
+                  "}",
+                  "function b64urlDeTexto(texto) { return b64urlDePalavras(cj.enc.Utf8.parse(texto)); }",
+                  "function decodificarJwt(jwt) {",
+                  "    const partes = jwt.split('.');",
+                  "    return {",
+                  "        partes: partes,",
+                  "        header: JSON.parse(b64urlParaTexto(partes[0])),",
+                  "        payload: JSON.parse(b64urlParaTexto(partes[1])),",
+                  "    };",
+                  "}",
+                  "function tokenLegitimo() {",
+                  "    const t = pm.collectionVariables.get(\"token\");",
+                  "    if (!t) { throw new Error('Rode primeiro \"Login\": não há token para forjar.'); }",
+                  "    return t;",
+                  "}",
                   "pm.test(\"login bem-sucedido\", function () {",
                   "    pm.response.to.have.status(200);",
                   "});",
                   "const corpo = pm.response.json();",
                   "if (corpo.access_token) {",
                   "    pm.collectionVariables.set(\"token\", corpo.access_token);",
+                  "    pm.collectionVariables.set(\"refreshToken\", corpo.refresh_token);",
+                  "    const jwt = decodificarJwt(corpo.access_token);",
+                  "    const agora = Math.floor(Date.now() / 1000);",
+                  "",
+                  "pm.test(\"token_type Bearer\", function () {",
+                  "    pm.expect(corpo.token_type).to.eql('Bearer');",
+                  "});",
+                  "pm.test(\"JWT tem três partes: header.payload.assinatura\", function () {",
+                  "    pm.expect(jwt.partes).to.have.lengthOf(3);",
+                  "    pm.expect(jwt.partes[2].length).to.be.above(0);",
+                  "});",
+                  "pm.test(\"header: assinatura assimétrica RS256 com kid\", function () {",
+                  "    pm.expect(jwt.header.alg).to.eql('RS256');",
+                  "    pm.expect(jwt.header.typ).to.eql('JWT');",
+                  "    pm.expect(jwt.header.kid).to.be.a('string');",
+                  "});",
+                  "pm.test(\"kid aponta para uma chave publicada no JWKS\", function () {",
+                  "    const kids = JSON.parse(pm.collectionVariables.get(\"jwksKids\") || \"[]\");",
+                  "    if (kids.length === 0) { return; }  // JWKS não foi consultado nesta execução",
+                  "    pm.expect(kids).to.include(jwt.header.kid);",
+                  "});",
+                  "pm.test(\"iss é o realm fisioagenda\", function () {",
+                  "    pm.expect(jwt.payload.iss).to.eql(pm.collectionVariables.get('keycloak') + '/realms/' + pm.collectionVariables.get('realm'));",
+                  "});",
+                  "pm.test(\"aud inclui a API (fisioagenda-backend)\", function () {",
+                  "    pm.expect([].concat(jwt.payload.aud)).to.include('fisioagenda-backend');",
+                  "});",
+                  "pm.test(\"sub é o uuid do usuário no Keycloak\", function () {",
+                  "    pm.expect(jwt.payload.sub).to.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);",
+                  "});",
+                  "pm.test(\"exp no futuro, coerente com expires_in\", function () {",
+                  "    pm.expect(jwt.payload.exp).to.be.above(agora);",
+                  "    pm.expect(jwt.payload.exp - jwt.payload.iat).to.eql(corpo.expires_in);",
+                  "});",
+                  "pm.test(\"payload não carrega senha\", function () {",
+                  "    pm.expect(JSON.stringify(jwt.payload)).to.not.include(pm.collectionVariables.get('senha'));",
+                  "});",
+                  "",
+                  "    const quando = s => new Date(s * 1000).toISOString().replace('T', ' ').slice(0, 19) + ' UTC';",
+                  "    const p = jwt.payload;",
+                  "    pm.visualizer.set(\"<style>\\n  body { font-family: -apple-system, 'Segoe UI', Roboto, sans-serif; background: #0d1117; color: #e6edf3; margin: 0; padding: 20px; }\\n  h2 { font-size: 15px; letter-spacing: .04em; text-transform: uppercase; color: #8b949e; margin: 0 0 12px; }\\n  .bruto { font-family: ui-monospace, Consolas, monospace; font-size: 12px; word-break: break-all; line-height: 1.6; background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 14px; }\\n  .h { color: #ff7b72; } .p { color: #d2a8ff; } .s { color: #79c0ff; } .ponto { color: #e6edf3; }\\n  .legenda { display: flex; gap: 18px; font-size: 12px; margin: 10px 0 22px; color: #8b949e; }\\n  .legenda b { font-weight: 600; }\\n  .grade { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }\\n  section { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 14px; overflow-x: auto; }\\n  pre { margin: 0; font-size: 12px; font-family: ui-monospace, Consolas, monospace; }\\n  table { width: 100%; border-collapse: collapse; margin-top: 22px; font-size: 13px; }\\n  td, th { text-align: left; padding: 8px 10px; border-bottom: 1px solid #21262d; vertical-align: top; }\\n  th { color: #8b949e; font-weight: 500; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }\\n  td code { color: #d2a8ff; } td.valor { font-family: ui-monospace, Consolas, monospace; font-size: 12px; word-break: break-all; }\\n</style>\\n<h2>JWT emitido pelo Keycloak</h2>\\n<div class=\\\"bruto\\\"><span class=\\\"h\\\">{{h}}</span><span class=\\\"ponto\\\">.</span><span class=\\\"p\\\">{{p}}</span><span class=\\\"ponto\\\">.</span><span class=\\\"s\\\">{{s}}</span></div>\\n<div class=\\\"legenda\\\"><span class=\\\"h\\\"><b>header</b></span><span class=\\\"p\\\"><b>payload</b> (claims)</span><span class=\\\"s\\\"><b>assinatura</b> {{alg}} \\u2014 s\\u00f3 a chave privada do realm produz</span></div>\\n<div class=\\\"grade\\\">\\n  <section><h2>Header</h2><pre>{{header}}</pre></section>\\n  <section><h2>Payload</h2><pre>{{payload}}</pre></section>\\n</div>\\n<table>\\n  <tr><th>Claim</th><th>Valor</th><th>O que a API confere</th></tr>\\n  {{#each claims}}<tr><td><code>{{nome}}</code></td><td class=\\\"valor\\\">{{valor}}</td><td>{{papel}}</td></tr>{{/each}}\\n</table>\", {",
+                  "        h: jwt.partes[0], p: jwt.partes[1], s: jwt.partes[2], alg: jwt.header.alg,",
+                  "        header: JSON.stringify(jwt.header, null, 2),",
+                  "        payload: JSON.stringify(p, null, 2),",
+                  "        claims: [",
+                  "            { nome: 'alg / kid', valor: jwt.header.alg + ' / ' + jwt.header.kid, papel: 'Só RS256/384/512 é aceito; o kid escolhe a chave pública no JWKS.' },",
+                  "            { nome: 'iss', valor: p.iss, papel: 'Precisa ser exatamente o realm configurado.' },",
+                  "            { nome: 'aud', valor: [].concat(p.aud).join(', '), papel: 'Precisa conter fisioagenda-backend — token emitido para outra API é recusado.' },",
+                  "            { nome: 'sub', valor: p.sub, papel: 'Identidade. Liga o token ao usuário local (keycloak_id).' },",
+                  "            { nome: 'azp', valor: p.azp, papel: 'Client que pediu o token.' },",
+                  "            { nome: 'iat', valor: quando(p.iat), papel: 'Emitido em.' },",
+                  "            { nome: 'exp', valor: quando(p.exp), papel: 'Depois disso, 401.' },",
+                  "            { nome: 'realm_access.roles', valor: ((p.realm_access || {}).roles || []).join(', '), papel: 'Informativo. O papel por clínica vem do banco, não do token.' },",
+                  "        ],",
+                  "    });",
                   "    console.log(\"token gravado; as demais requisições já vão autenticadas\");",
                   "}"
                 ]
@@ -163,7 +336,7 @@
           "response": []
         },
         {
-          "name": "GET /auth/eu — perfil e vínculos",
+          "name": "GET /auth/eu — token válido → 200",
           "request": {
             "method": "GET",
             "header": [],
@@ -179,7 +352,7 @@
                 "eu"
               ]
             },
-            "description": "Quem sou e em quais clínicas atuo, com o papel em cada uma."
+            "description": "Mesma requisição, agora com `Authorization: Bearer {{token}}` herdado da coleção. A API valida o JWT e usa o `sub` para achar o usuário no banco. Resposta: quem sou e em quais clínicas atuo, com o papel em cada uma."
           },
           "event": [
             {
@@ -190,10 +363,37 @@
                   "pm.test(\"status 200\", function () {",
                   "    pm.response.to.have.status(200);",
                   "});",
+                  "const cj = require('crypto-js');",
+                  "function b64urlParaTexto(s) {",
+                  "    s = s.replace(/-/g, '+').replace(/_/g, '/');",
+                  "    while (s.length % 4) { s += '='; }",
+                  "    return cj.enc.Base64.parse(s).toString(cj.enc.Utf8);",
+                  "}",
+                  "function b64urlDePalavras(palavras) {",
+                  "    return cj.enc.Base64.stringify(palavras).replace(/=+$/, '').replace(/\\+/g, '-').replace(/\\//g, '_');",
+                  "}",
+                  "function b64urlDeTexto(texto) { return b64urlDePalavras(cj.enc.Utf8.parse(texto)); }",
+                  "function decodificarJwt(jwt) {",
+                  "    const partes = jwt.split('.');",
+                  "    return {",
+                  "        partes: partes,",
+                  "        header: JSON.parse(b64urlParaTexto(partes[0])),",
+                  "        payload: JSON.parse(b64urlParaTexto(partes[1])),",
+                  "    };",
+                  "}",
+                  "function tokenLegitimo() {",
+                  "    const t = pm.collectionVariables.get(\"token\");",
+                  "    if (!t) { throw new Error('Rode primeiro \"Login\": não há token para forjar.'); }",
+                  "    return t;",
+                  "}",
                   "pm.test(\"traz usuário e vínculos\", function () {",
                   "    const c = pm.response.json();",
                   "    pm.expect(c).to.have.property('usuario');",
                   "    pm.expect(c).to.have.property('vinculos');",
+                  "});",
+                  "pm.test(\"usuário resolvido é o dono do token\", function () {",
+                  "    const email = decodificarJwt(pm.collectionVariables.get(\"token\")).payload.email;",
+                  "    pm.expect(pm.response.json().usuario.email).to.eql(email);",
                   "});"
                 ]
               }
@@ -234,6 +434,558 @@
                   "});",
                   "pm.test(\"codigo nao_autenticado\", function () {",
                   "    pm.expect(pm.response.json().codigo).to.eql('nao_autenticado');",
+                  "});",
+                  "pm.test(\"resposta não revela o motivo da recusa\", function () {",
+                  "    pm.expect(pm.response.json().mensagem).to.eql('Credencial ausente ou inválida.');",
+                  "});",
+                  "pm.test(\"WWW-Authenticate: Bearer (RFC 6750)\", function () {",
+                  "    pm.expect(pm.response.headers.get('WWW-Authenticate')).to.eql('Bearer');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Token malformado → 401",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{api}}/api/v1/auth/eu",
+              "host": [
+                "{{api}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "eu"
+              ]
+            },
+            "description": "Um Bearer que nem tem a forma de JWT.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenForjado}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set(\"tokenForjado\", \"isto-nao-e-um-jwt\");"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 401\", function () {",
+                  "    pm.response.to.have.status(401);",
+                  "});",
+                  "pm.test(\"codigo nao_autenticado\", function () {",
+                  "    pm.expect(pm.response.json().codigo).to.eql('nao_autenticado');",
+                  "});",
+                  "pm.test(\"resposta não revela o motivo da recusa\", function () {",
+                  "    pm.expect(pm.response.json().mensagem).to.eql('Credencial ausente ou inválida.');",
+                  "});",
+                  "pm.test(\"WWW-Authenticate: Bearer (RFC 6750)\", function () {",
+                  "    pm.expect(pm.response.headers.get('WWW-Authenticate')).to.eql('Bearer');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Payload adulterado (escalada de privilégio) → 401",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{api}}/api/v1/auth/eu",
+              "host": [
+                "{{api}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "eu"
+              ]
+            },
+            "description": "Pega o token legítimo, troca o e-mail, adiciona o papel `admin` e empurra o `exp` um ano para frente — **mantendo a assinatura original**. O payload de um JWT é só base64url: qualquer um lê e edita. O que impede a fraude é a assinatura, que deixa de bater com o conteúdo.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenForjado}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const cj = require('crypto-js');",
+                  "function b64urlParaTexto(s) {",
+                  "    s = s.replace(/-/g, '+').replace(/_/g, '/');",
+                  "    while (s.length % 4) { s += '='; }",
+                  "    return cj.enc.Base64.parse(s).toString(cj.enc.Utf8);",
+                  "}",
+                  "function b64urlDePalavras(palavras) {",
+                  "    return cj.enc.Base64.stringify(palavras).replace(/=+$/, '').replace(/\\+/g, '-').replace(/\\//g, '_');",
+                  "}",
+                  "function b64urlDeTexto(texto) { return b64urlDePalavras(cj.enc.Utf8.parse(texto)); }",
+                  "function decodificarJwt(jwt) {",
+                  "    const partes = jwt.split('.');",
+                  "    return {",
+                  "        partes: partes,",
+                  "        header: JSON.parse(b64urlParaTexto(partes[0])),",
+                  "        payload: JSON.parse(b64urlParaTexto(partes[1])),",
+                  "    };",
+                  "}",
+                  "function tokenLegitimo() {",
+                  "    const t = pm.collectionVariables.get(\"token\");",
+                  "    if (!t) { throw new Error('Rode primeiro \"Login\": não há token para forjar.'); }",
+                  "    return t;",
+                  "}",
+                  "const jwt = decodificarJwt(tokenLegitimo());",
+                  "const p = jwt.payload;",
+                  "p.email = 'invasor@exemplo.com.br';",
+                  "p.realm_access = { roles: ((p.realm_access || {}).roles || []).concat('admin') };",
+                  "p.exp = p.exp + 365 * 24 * 3600;",
+                  "const forjado = [jwt.partes[0], b64urlDeTexto(JSON.stringify(p)), jwt.partes[2]].join('.');",
+                  "pm.collectionVariables.set(\"tokenForjado\", forjado);",
+                  "console.log('payload adulterado', p);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 401\", function () {",
+                  "    pm.response.to.have.status(401);",
+                  "});",
+                  "pm.test(\"codigo nao_autenticado\", function () {",
+                  "    pm.expect(pm.response.json().codigo).to.eql('nao_autenticado');",
+                  "});",
+                  "pm.test(\"resposta não revela o motivo da recusa\", function () {",
+                  "    pm.expect(pm.response.json().mensagem).to.eql('Credencial ausente ou inválida.');",
+                  "});",
+                  "pm.test(\"WWW-Authenticate: Bearer (RFC 6750)\", function () {",
+                  "    pm.expect(pm.response.headers.get('WWW-Authenticate')).to.eql('Bearer');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Assinatura corrompida → 401",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{api}}/api/v1/auth/eu",
+              "host": [
+                "{{api}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "eu"
+              ]
+            },
+            "description": "Header e payload intactos; só os últimos bytes da assinatura mudam.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenForjado}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const cj = require('crypto-js');",
+                  "function b64urlParaTexto(s) {",
+                  "    s = s.replace(/-/g, '+').replace(/_/g, '/');",
+                  "    while (s.length % 4) { s += '='; }",
+                  "    return cj.enc.Base64.parse(s).toString(cj.enc.Utf8);",
+                  "}",
+                  "function b64urlDePalavras(palavras) {",
+                  "    return cj.enc.Base64.stringify(palavras).replace(/=+$/, '').replace(/\\+/g, '-').replace(/\\//g, '_');",
+                  "}",
+                  "function b64urlDeTexto(texto) { return b64urlDePalavras(cj.enc.Utf8.parse(texto)); }",
+                  "function decodificarJwt(jwt) {",
+                  "    const partes = jwt.split('.');",
+                  "    return {",
+                  "        partes: partes,",
+                  "        header: JSON.parse(b64urlParaTexto(partes[0])),",
+                  "        payload: JSON.parse(b64urlParaTexto(partes[1])),",
+                  "    };",
+                  "}",
+                  "function tokenLegitimo() {",
+                  "    const t = pm.collectionVariables.get(\"token\");",
+                  "    if (!t) { throw new Error('Rode primeiro \"Login\": não há token para forjar.'); }",
+                  "    return t;",
+                  "}",
+                  "const partes = tokenLegitimo().split('.');",
+                  "const s = partes[2];",
+                  "partes[2] = s.slice(0, -6) + (s.endsWith('AAAAAA') ? 'BBBBBB' : 'AAAAAA');",
+                  "pm.collectionVariables.set(\"tokenForjado\", partes.join(\".\"));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 401\", function () {",
+                  "    pm.response.to.have.status(401);",
+                  "});",
+                  "pm.test(\"codigo nao_autenticado\", function () {",
+                  "    pm.expect(pm.response.json().codigo).to.eql('nao_autenticado');",
+                  "});",
+                  "pm.test(\"resposta não revela o motivo da recusa\", function () {",
+                  "    pm.expect(pm.response.json().mensagem).to.eql('Credencial ausente ou inválida.');",
+                  "});",
+                  "pm.test(\"WWW-Authenticate: Bearer (RFC 6750)\", function () {",
+                  "    pm.expect(pm.response.headers.get('WWW-Authenticate')).to.eql('Bearer');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "alg \"none\" (token sem assinatura) → 401",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{api}}/api/v1/auth/eu",
+              "host": [
+                "{{api}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "eu"
+              ]
+            },
+            "description": "Ataque clássico: declarar no header que o token não é assinado e mandar a assinatura vazia. Bibliotecas que confiam no `alg` do próprio token aceitam. A API só aceita a lista fixa RS256/RS384/RS512.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenForjado}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const cj = require('crypto-js');",
+                  "function b64urlParaTexto(s) {",
+                  "    s = s.replace(/-/g, '+').replace(/_/g, '/');",
+                  "    while (s.length % 4) { s += '='; }",
+                  "    return cj.enc.Base64.parse(s).toString(cj.enc.Utf8);",
+                  "}",
+                  "function b64urlDePalavras(palavras) {",
+                  "    return cj.enc.Base64.stringify(palavras).replace(/=+$/, '').replace(/\\+/g, '-').replace(/\\//g, '_');",
+                  "}",
+                  "function b64urlDeTexto(texto) { return b64urlDePalavras(cj.enc.Utf8.parse(texto)); }",
+                  "function decodificarJwt(jwt) {",
+                  "    const partes = jwt.split('.');",
+                  "    return {",
+                  "        partes: partes,",
+                  "        header: JSON.parse(b64urlParaTexto(partes[0])),",
+                  "        payload: JSON.parse(b64urlParaTexto(partes[1])),",
+                  "    };",
+                  "}",
+                  "function tokenLegitimo() {",
+                  "    const t = pm.collectionVariables.get(\"token\");",
+                  "    if (!t) { throw new Error('Rode primeiro \"Login\": não há token para forjar.'); }",
+                  "    return t;",
+                  "}",
+                  "const partes = tokenLegitimo().split('.');",
+                  "const header = b64urlDeTexto(JSON.stringify({ alg: 'none', typ: 'JWT' }));",
+                  "pm.collectionVariables.set(\"tokenForjado\", header + \".\" + partes[1] + \".\");"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 401\", function () {",
+                  "    pm.response.to.have.status(401);",
+                  "});",
+                  "pm.test(\"codigo nao_autenticado\", function () {",
+                  "    pm.expect(pm.response.json().codigo).to.eql('nao_autenticado');",
+                  "});",
+                  "pm.test(\"resposta não revela o motivo da recusa\", function () {",
+                  "    pm.expect(pm.response.json().mensagem).to.eql('Credencial ausente ou inválida.');",
+                  "});",
+                  "pm.test(\"WWW-Authenticate: Bearer (RFC 6750)\", function () {",
+                  "    pm.expect(pm.response.headers.get('WWW-Authenticate')).to.eql('Bearer');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Confusão de algoritmo HS256 → 401",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{api}}/api/v1/auth/eu",
+              "host": [
+                "{{api}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "eu"
+              ]
+            },
+            "description": "O atacante troca `alg` para HS256 (HMAC, simétrico) e assina com a **chave pública** do realm — que qualquer um baixa do JWKS. Um servidor que usasse a mesma chave para verificar sem fixar o algoritmo aceitaria. Aqui, HS* é recusado antes de qualquer verificação.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenForjado}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const cj = require('crypto-js');",
+                  "function b64urlParaTexto(s) {",
+                  "    s = s.replace(/-/g, '+').replace(/_/g, '/');",
+                  "    while (s.length % 4) { s += '='; }",
+                  "    return cj.enc.Base64.parse(s).toString(cj.enc.Utf8);",
+                  "}",
+                  "function b64urlDePalavras(palavras) {",
+                  "    return cj.enc.Base64.stringify(palavras).replace(/=+$/, '').replace(/\\+/g, '-').replace(/\\//g, '_');",
+                  "}",
+                  "function b64urlDeTexto(texto) { return b64urlDePalavras(cj.enc.Utf8.parse(texto)); }",
+                  "function decodificarJwt(jwt) {",
+                  "    const partes = jwt.split('.');",
+                  "    return {",
+                  "        partes: partes,",
+                  "        header: JSON.parse(b64urlParaTexto(partes[0])),",
+                  "        payload: JSON.parse(b64urlParaTexto(partes[1])),",
+                  "    };",
+                  "}",
+                  "function tokenLegitimo() {",
+                  "    const t = pm.collectionVariables.get(\"token\");",
+                  "    if (!t) { throw new Error('Rode primeiro \"Login\": não há token para forjar.'); }",
+                  "    return t;",
+                  "}",
+                  "const jwt = decodificarJwt(tokenLegitimo());",
+                  "const chave = pm.collectionVariables.get(\"chavePublicaRealm\");",
+                  "if (!chave) { throw new Error('Rode antes \"JWKS — chaves públicas de assinatura\".'); }",
+                  "const header = b64urlDeTexto(JSON.stringify({ alg: 'HS256', typ: 'JWT', kid: jwt.header.kid }));",
+                  "const conteudo = header + '.' + jwt.partes[1];",
+                  "const assinatura = b64urlDePalavras(cj.HmacSHA256(conteudo, chave));",
+                  "pm.collectionVariables.set(\"tokenForjado\", conteudo + \".\" + assinatura);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 401\", function () {",
+                  "    pm.response.to.have.status(401);",
+                  "});",
+                  "pm.test(\"codigo nao_autenticado\", function () {",
+                  "    pm.expect(pm.response.json().codigo).to.eql('nao_autenticado');",
+                  "});",
+                  "pm.test(\"resposta não revela o motivo da recusa\", function () {",
+                  "    pm.expect(pm.response.json().mensagem).to.eql('Credencial ausente ou inválida.');",
+                  "});",
+                  "pm.test(\"WWW-Authenticate: Bearer (RFC 6750)\", function () {",
+                  "    pm.expect(pm.response.headers.get('WWW-Authenticate')).to.eql('Bearer');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Refresh — novo access token sem senha",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{keycloak}}/realms/{{realm}}/protocol/openid-connect/token",
+              "host": [
+                "{{keycloak}}"
+              ],
+              "path": [
+                "realms",
+                "{{realm}}",
+                "protocol",
+                "openid-connect",
+                "token"
+              ]
+            },
+            "description": "O access token é curto de propósito (15 min): se vazar, a janela é pequena. O refresh token, guardado pelo cliente, obtém um novo sem pedir a senha. O Keycloak rotaciona os dois; a coleção passa a usar o novo par.",
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "grant_type",
+                  "value": "refresh_token"
+                },
+                {
+                  "key": "client_id",
+                  "value": "{{clientTestes}}"
+                },
+                {
+                  "key": "client_secret",
+                  "value": "{{segredoTestes}}"
+                },
+                {
+                  "key": "refresh_token",
+                  "value": "{{refreshToken}}"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const cj = require('crypto-js');",
+                  "function b64urlParaTexto(s) {",
+                  "    s = s.replace(/-/g, '+').replace(/_/g, '/');",
+                  "    while (s.length % 4) { s += '='; }",
+                  "    return cj.enc.Base64.parse(s).toString(cj.enc.Utf8);",
+                  "}",
+                  "function b64urlDePalavras(palavras) {",
+                  "    return cj.enc.Base64.stringify(palavras).replace(/=+$/, '').replace(/\\+/g, '-').replace(/\\//g, '_');",
+                  "}",
+                  "function b64urlDeTexto(texto) { return b64urlDePalavras(cj.enc.Utf8.parse(texto)); }",
+                  "function decodificarJwt(jwt) {",
+                  "    const partes = jwt.split('.');",
+                  "    return {",
+                  "        partes: partes,",
+                  "        header: JSON.parse(b64urlParaTexto(partes[0])),",
+                  "        payload: JSON.parse(b64urlParaTexto(partes[1])),",
+                  "    };",
+                  "}",
+                  "function tokenLegitimo() {",
+                  "    const t = pm.collectionVariables.get(\"token\");",
+                  "    if (!t) { throw new Error('Rode primeiro \"Login\": não há token para forjar.'); }",
+                  "    return t;",
+                  "}",
+                  "pm.test(\"status 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "const corpo = pm.response.json();",
+                  "const anterior = pm.collectionVariables.get(\"token\");",
+                  "pm.test(\"emite um access token novo, do mesmo usuário\", function () {",
+                  "    pm.expect(corpo.access_token).to.not.eql(anterior);",
+                  "    pm.expect(decodificarJwt(corpo.access_token).payload.sub).to.eql(decodificarJwt(anterior).payload.sub);",
+                  "});",
+                  "if (corpo.access_token) {",
+                  "    pm.collectionVariables.set(\"token\", corpo.access_token);",
+                  "    pm.collectionVariables.set(\"refreshToken\", corpo.refresh_token);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "GET /auth/eu com o token renovado → 200",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{api}}/api/v1/auth/eu",
+              "host": [
+                "{{api}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "eu"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", function () {",
+                  "    pm.response.to.have.status(200);",
                   "});"
                 ]
               }
@@ -1362,6 +2114,129 @@
           "response": []
         }
       ]
+    },
+    {
+      "name": "5 · Logout (fim da sessão JWT)",
+      "description": "Fica por último para não derrubar a sessão das pastas anteriores.\n\nO logout encerra a **sessão** no Keycloak e invalida o refresh token. O access token já emitido continua válido até o `exp`: a API verifica o JWT localmente, sem consultar o Keycloak — é isso que torna a validação barata e sem estado. O custo dessa escolha é limitado pela vida curta do token (15 min).",
+      "item": [
+        {
+          "name": "Logout — encerra a sessão no Keycloak",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{keycloak}}/realms/{{realm}}/protocol/openid-connect/logout",
+              "host": [
+                "{{keycloak}}"
+              ],
+              "path": [
+                "realms",
+                "{{realm}}",
+                "protocol",
+                "openid-connect",
+                "logout"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "client_id",
+                  "value": "{{clientTestes}}"
+                },
+                {
+                  "key": "client_secret",
+                  "value": "{{segredoTestes}}"
+                },
+                {
+                  "key": "refresh_token",
+                  "value": "{{refreshToken}}"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 204\", function () {",
+                  "    pm.response.to.have.status(204);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Refresh após logout → 400 invalid_grant",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{keycloak}}/realms/{{realm}}/protocol/openid-connect/token",
+              "host": [
+                "{{keycloak}}"
+              ],
+              "path": [
+                "realms",
+                "{{realm}}",
+                "protocol",
+                "openid-connect",
+                "token"
+              ]
+            },
+            "description": "A sessão acabou: o refresh token não renova mais nada.",
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "grant_type",
+                  "value": "refresh_token"
+                },
+                {
+                  "key": "client_id",
+                  "value": "{{clientTestes}}"
+                },
+                {
+                  "key": "client_secret",
+                  "value": "{{segredoTestes}}"
+                },
+                {
+                  "key": "refresh_token",
+                  "value": "{{refreshToken}}"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 400\", function () {",
+                  "    pm.response.to.have.status(400);",
+                  "});",
+                  "pm.test(\"invalid_grant\", function () {",
+                  "    pm.expect(pm.response.json().error).to.eql('invalid_grant');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
     }
   ],
   "variable": [
@@ -1403,6 +2278,26 @@
     },
     {
       "key": "token",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "refreshToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "tokenForjado",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "jwksKids",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "chavePublicaRealm",
       "value": "",
       "type": "string"
     },

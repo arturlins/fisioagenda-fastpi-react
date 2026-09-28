@@ -54,13 +54,40 @@ Importe `backend/fisioagenda.postman_collection.json`.
 
 1. Nas variáveis da coleção, preencha **`segredoTestes`** com o `KEYCLOAK_TESTES_CLIENT_SECRET`
    do `.env` da raiz.
-2. Rode **1 · Autenticação → Login**. O token é gravado automaticamente e todas as demais
-   requisições passam a ir autenticadas.
+2. Rode a pasta **1 · Autenticação JWT (Keycloak)**. O **Login** grava o access token e o
+   refresh token; todas as demais requisições passam a ir com `Authorization: Bearer <jwt>`.
 3. Rode as pastas na ordem, ou cada requisição individualmente. Todas têm asserções: o painel
    *Test Results* mostra o que foi verificado.
 
-São 29 requisições, cobrindo os quatro verbos e também os casos de erro. A coleção pode ser
-executada quantas vezes quiser — nomes e e-mails são gerados a cada rodada.
+São 40 requisições e 83 asserções, cobrindo os quatro verbos e também os casos de erro. A
+coleção pode ser executada quantas vezes quiser — nomes e e-mails são gerados a cada rodada.
+
+### Demonstração do JWT (pasta 1)
+
+| Requisição | O que mostra |
+|---|---|
+| Descoberta OIDC | Emissor (`iss`) e endereço das chaves públicas (`jwks_uri`) |
+| JWKS | Chave pública RSA de assinatura; nenhum material privado exposto |
+| **Login** | O Keycloak emite o JWT RS256. A aba **Visualize** da resposta mostra header, payload e assinatura decodificados, com o que a API confere em cada claim |
+| `/auth/eu` com token | A API valida o JWT localmente e usa o `sub` para achar o usuário no banco |
+| Sem token, malformado | 401 |
+| Payload adulterado | E-mail trocado, papel `admin` adicionado, `exp` estendido, assinatura original mantida → 401 |
+| Assinatura corrompida | 401 |
+| `alg: none` | Token sem assinatura → 401 |
+| Confusão HS256 | Assinado com HMAC usando a chave *pública* do realm → 401 |
+| Refresh | Novo access token sem a senha, aceito pela API |
+
+Toda recusa devolve a mesma resposta: o motivo fica só no log do servidor. O **logout** está na
+pasta 5, no fim, para não derrubar a sessão das pastas intermediárias: ele encerra a sessão no
+Keycloak e o refresh passa a falhar, mas o access token já emitido vale até o `exp` — a API
+valida o JWT sem consultar o Keycloak, e a vida curta do token (15 min) limita essa janela.
+
+Rodar tudo sem abrir o Postman:
+
+```bash
+cd backend
+npx newman run fisioagenda.postman_collection.json --env-var "segredoTestes=<KEYCLOAK_TESTES_CLIENT_SECRET>"
+```
 
 Alternativa sem Postman: `backend/exemplos.http` (REST Client do VS Code ou cliente do
 JetBrains), ou o `/docs`, que autentica de verdade via Authorization Code + PKCE.
@@ -80,7 +107,7 @@ Detalhamento e justificativa de cada decisão em `.claude/arquitetura.md`.
 | **GET/POST/PUT/DELETE** | `usuarios_controller.py`, `clinicas_controller.py` | Pastas 2, 3 e 4 da coleção |
 | **ORM** | SQLAlchemy 2.0 em `app/models/` | SQL cru existe apenas nas migrations |
 | **Controle de exceção** | `backend/app/exceptions/` | Erros de domínio + handlers globais; toda falha sai no mesmo formato |
-| **Keycloak** | `app/integrations/keycloak/`, `app/core/seguranca.py` | O login da coleção é real; sem token, 401 |
+| **Keycloak** | `app/integrations/keycloak/`, `app/core/seguranca.py` | Pasta 1 da coleção: JWT RS256 real, decodificado, e cinco formas de forjá-lo recusadas com 401 |
 
 ### Verificações rápidas
 
@@ -97,7 +124,8 @@ uv run mypy app servidor.py tests alembic/env.py   # tipagem estrita
 
 Se o tempo for curto, estas seis chamadas cobrem tudo:
 
-1. **Login** → token do Keycloak.
+1. **Login** → token do Keycloak; aba **Visualize** mostra o JWT decodificado. Em seguida,
+   **Payload adulterado** → 401: editar o token invalida a assinatura.
 2. **GET `/api/v1/auth/eu`** → identidade e vínculos com papel por clínica.
 3. **GET `/api/v1/auth/eu` sem o cabeçalho** → 401 no formato padronizado de erro.
 4. **POST `/api/v1/usuarios`** → 201 com `Location`. Repita a mesma chamada: 409 com
