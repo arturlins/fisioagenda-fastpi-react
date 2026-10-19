@@ -65,18 +65,16 @@
       "serviceAccountsEnabled": false,
       "frontchannelLogout": true,
       "redirectUris": [
-        "http://localhost:5173/*",
-        "http://127.0.0.1:5173/*",
-        "http://localhost:8000/docs/oauth2-redirect"
+        "${FISIOAGENDA_APP_URL}/*",
+        "${FISIOAGENDA_API_URL}/docs/oauth2-redirect"
       ],
       "webOrigins": [
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-        "http://localhost:8000"
+        "${FISIOAGENDA_APP_URL}",
+        "${FISIOAGENDA_API_URL}"
       ],
       "attributes": {
         "pkce.code.challenge.method": "S256",
-        "post.logout.redirect.uris": "http://localhost:5173/*"
+        "post.logout.redirect.uris": "${FISIOAGENDA_APP_URL}/*"
       },
       "protocolMappers": [
         {

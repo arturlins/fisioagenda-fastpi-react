@@ -29,7 +29,7 @@ services:
       start_period: 15s
 
   keycloak:
-    image: quay.io/keycloak/keycloak:26.4
+    image: quay.io/keycloak/keycloak:26.4.7
     container_name: fisioagenda-keycloak
     restart: unless-stopped
     # Os ${VAR} do realm JSON só são interpolados para as variáveis explicitamente
@@ -38,7 +38,7 @@ services:
     command:
       - start-dev
       - --import-realm
-      - --spi-admin--allowed-system-variables=KEYCLOAK_BACKEND_CLIENT_SECRET,KEYCLOAK_TESTES_CLIENT_SECRET
+      - --spi-admin--allowed-system-variables=KEYCLOAK_BACKEND_CLIENT_SECRET,KEYCLOAK_TESTES_CLIENT_SECRET,FISIOAGENDA_APP_URL,FISIOAGENDA_API_URL
     environment:
       KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN_USER:-admin}
       KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:?defina KEYCLOAK_ADMIN_PASSWORD no .env}
@@ -50,6 +50,10 @@ services:
       # Lidos pelo realm-fisioagenda.json na importação.
       KEYCLOAK_BACKEND_CLIENT_SECRET: ${KEYCLOAK_BACKEND_CLIENT_SECRET:?defina KEYCLOAK_BACKEND_CLIENT_SECRET no .env}
       KEYCLOAK_TESTES_CLIENT_SECRET: ${KEYCLOAK_TESTES_CLIENT_SECRET:?defina KEYCLOAK_TESTES_CLIENT_SECRET no .env}
+      # URLs do realm. Em produção vêm do Terraform; aqui, os endereços locais.
+      # O app é aberto em localhost:5173 — 127.0.0.1:5173 não está liberado.
+      FISIOAGENDA_APP_URL: ${FISIOAGENDA_APP_URL:-http://localhost:5173}
+      FISIOAGENDA_API_URL: ${FISIOAGENDA_API_URL:-http://localhost:8000}
       TZ: America/Maceio
     ports:
       - "127.0.0.1:8080:8080"
