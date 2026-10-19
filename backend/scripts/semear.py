@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import os
 import sys
 from dataclasses import dataclass
 
@@ -38,11 +39,33 @@ from app.services.clinica_service import ClinicaService
 from app.services.conta_service import ContaService
 from app.services.usuario_service import UsuarioService
 
-# Senha única para todos, para facilitar a demonstração. Atende à política do
-# realm: 10+ caracteres, diferente do nome de usuário e do e-mail.
-SENHA = "FisioAgenda#2026"
+# Senha de desenvolvimento, documentada no ROTEIRO. Atende à política do realm:
+# 10+ caracteres, diferente do nome de usuário e do e-mail.
+SENHA_PADRAO = "FisioAgenda#2026"
+_SENHA_MINIMA = 10
 DOMINIO = "clinicamovimento.com.br"
 NOME_DA_CONTA = "Clínica Movimento"
+
+
+def senha_de_demonstracao() -> tuple[SecretStr, bool]:
+    """Senha dos usuários de exemplo, e se ela veio do ambiente.
+
+    Fora da máquina de desenvolvimento, o Terraform gera a senha e a entrega por
+    `SEMEAR_SENHA`: uma senha escrita num repositório público não protege um
+    ambiente exposto na internet.
+    """
+    valor = os.environ.get("SEMEAR_SENHA")
+    if valor is None:
+        return SecretStr(SENHA_PADRAO), False
+    if len(valor) < _SENHA_MINIMA:
+        raise ValueError(f"SEMEAR_SENHA precisa de pelo menos {_SENHA_MINIMA} caracteres.")
+    return SecretStr(valor), True
+
+
+def linha_da_senha(senha: SecretStr, do_ambiente: bool) -> str:
+    if do_ambiente:
+        return "  Senha de todos: a definida em SEMEAR_SENHA"
+    return f"  Senha de todos: {senha.get_secret_value()}"
 
 
 @dataclass(frozen=True)
@@ -119,7 +142,7 @@ async def _apagar_conta_anterior(sessao: AsyncSession, keycloak: KeycloakAdmin) 
     return True
 
 
-async def _semear(config: Configuracao, recriar: bool) -> None:
+async def _semear(config: Configuracao, recriar: bool, senha: SecretStr, do_ambiente: bool) -> None:
     async with httpx.AsyncClient(timeout=config.keycloak_timeout_segundos) as http:
         keycloak = KeycloakAdmin(config, http)
 
@@ -153,7 +176,7 @@ async def _semear(config: Configuracao, recriar: bool) -> None:
                     cor_agenda=DONA.cor_agenda,
                     dono_da_conta=True,
                 ),
-                SecretStr(SENHA),
+                senha,
             )
             print(f"conta criada: {conta.nome}  ({conta.public_id})")
 
@@ -190,7 +213,7 @@ async def _semear(config: Configuracao, recriar: bool) -> None:
                         especialidade=pessoa.especialidade,
                         cor_agenda=pessoa.cor_agenda,
                     ),
-                    SecretStr(SENHA),
+                    senha,
                 )
                 print(f"usuário criado: {pessoa.nome}")
 
@@ -208,16 +231,20 @@ async def _semear(config: Configuracao, recriar: bool) -> None:
                 )
             await sessao.commit()
 
-            _resumo(conta, dona, criadas, equipe)
+            _resumo(conta, dona, criadas, equipe, linha_da_senha(senha, do_ambiente))
 
 
 def _resumo(
-    conta: Conta, dona: Usuario, clinicas: list[Clinica], equipe: dict[str, Usuario]
+    conta: Conta,
+    dona: Usuario,
+    clinicas: list[Clinica],
+    equipe: dict[str, Usuario],
+    linha_senha: str,
 ) -> None:
     print()
     print("=" * 72)
     print(f"  Conta: {conta.nome}")
-    print(f"  Senha de todos: {SENHA}")
+    print(linha_senha)
     print("=" * 72)
     print()
     print("  ACESSO                                    PAPEL")
@@ -251,7 +278,13 @@ def main() -> None:
     print()
 
     try:
-        asyncio.run(_semear(config, argumentos.recriar))
+        senha, do_ambiente = senha_de_demonstracao()
+    except ValueError as erro:
+        print(f"falhou: {erro}", file=sys.stderr)
+        raise SystemExit(1) from erro
+
+    try:
+        asyncio.run(_semear(config, argumentos.recriar, senha, do_ambiente))
     except Exception as erro:
         print(f"\nfalhou: {erro}", file=sys.stderr)
         raise SystemExit(1) from erro
