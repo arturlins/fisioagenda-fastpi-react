@@ -57,15 +57,16 @@ def criar_app(config: Configuracao | None = None) -> FastAPI:
     config = config or obter_configuracao()
     configurar_logging(nivel=config.log_nivel, formato=config.log_formato)
 
+    documentacao = config.documentacao_habilitada
     app = FastAPI(
         title=config.app_nome,
         version=config.app_versao,
         summary="Agendamento de fisioterapia — uso interno.",
         lifespan=_ciclo_de_vida,
-        # Documentação interativa fica fora do ar em produção.
-        docs_url=None if config.e_producao else "/docs",
+        # Fora de produção sempre; em produção, só com DOCS_HABILITADA=true.
+        docs_url="/docs" if documentacao else None,
         redoc_url=None,
-        openapi_url=None if config.e_producao else "/openapi.json",
+        openapi_url="/openapi.json" if documentacao else None,
         # O /docs autentica pelo client público do frontend, com PKCE. O client
         # confidencial da API não tem fluxo de navegador e não entra aqui.
         swagger_ui_init_oauth={

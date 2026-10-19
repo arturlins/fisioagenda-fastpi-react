@@ -11,7 +11,7 @@ from enum import StrEnum
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import Field, SecretStr, computed_field
+from pydantic import Field, SecretStr, computed_field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -33,6 +33,10 @@ class Configuracao(BaseSettings):
     app_nome: str = "FisioAgenda API"
     app_versao: str = "0.1.0"
     ambiente: Ambiente = Ambiente.DESENVOLVIMENTO
+    # None segue o ambiente: ligada fora de produção. O deploy da disciplina liga
+    # explicitamente — toda rota exige token, e o /docs autentica por PKCE, então
+    # publicar o schema não abre nada.
+    docs_habilitada: bool | None = None
 
     # --- Banco ---------------------------------------------------------------
     # O compose publica o Postgres em 127.0.0.1:5433 (a 5432 pode estar ocupada
@@ -47,7 +51,12 @@ class Configuracao(BaseSettings):
     banco_pool_overflow: int = Field(default=10, ge=0)
 
     # --- Keycloak ------------------------------------------------------------
+    # URL pela qual a API alcança o Keycloak (JWKS, token, Admin API). Em produção
+    # é a rede interna do compose.
     keycloak_url: str = "http://127.0.0.1:8080"
+    # URL que o navegador usa — e portanto a que aparece no `iss` do token. Sem
+    # ela, as duas coincidem (desenvolvimento).
+    keycloak_url_publica: str | None = None
     keycloak_realm: str = "fisioagenda"
     # Client confidencial da API. O service account dele fala com a Admin API;
     # as credenciais de admin raiz do Keycloak nunca entram aqui.
@@ -68,6 +77,13 @@ class Configuracao(BaseSettings):
     log_nivel: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
     log_formato: Literal["json", "texto"] = "json"
 
+    @field_validator("keycloak_url", "keycloak_url_publica")
+    @classmethod
+    def _sem_barra_final(cls, valor: str | None) -> str | None:
+        # O emissor é comparado byte a byte com o `iss`; uma barra a mais
+        # recusaria todo token.
+        return valor.rstrip("/") if valor is not None else None
+
     @computed_field  # type: ignore[prop-decorator]
     @property
     def banco_url(self) -> str:
@@ -82,6 +98,10 @@ class Configuracao(BaseSettings):
     def e_producao(self) -> bool:
         return self.ambiente is Ambiente.PRODUCAO
 
+    @property
+    def documentacao_habilitada(self) -> bool:
+        return not self.e_producao if self.docs_habilitada is None else self.docs_habilitada
+
     # --- URLs derivadas do Keycloak ------------------------------------------
     # Montadas aqui, uma vez, para que nenhuma camada precise concatenar caminho
     # de OIDC à mão.
@@ -89,15 +109,20 @@ class Configuracao(BaseSettings):
     @property
     def keycloak_emissor(self) -> str:
         """Valor esperado da claim `iss`. Comparado byte a byte na verificação."""
+        base = self.keycloak_url_publica or self.keycloak_url
+        return f"{base}/realms/{self.keycloak_realm}"
+
+    @property
+    def keycloak_realm_interno(self) -> str:
         return f"{self.keycloak_url}/realms/{self.keycloak_realm}"
 
     @property
     def keycloak_jwks_url(self) -> str:
-        return f"{self.keycloak_emissor}/protocol/openid-connect/certs"
+        return f"{self.keycloak_realm_interno}/protocol/openid-connect/certs"
 
     @property
     def keycloak_token_url(self) -> str:
-        return f"{self.keycloak_emissor}/protocol/openid-connect/token"
+        return f"{self.keycloak_realm_interno}/protocol/openid-connect/token"
 
     @property
     def keycloak_admin_url(self) -> str:
