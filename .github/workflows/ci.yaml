@@ -31,7 +31,7 @@ jobs:
       - name: Postgres
         working-directory: .
         run: docker compose up -d --wait postgres
-      - uses: astral-sh/setup-uv@v10
+      - uses: astral-sh/setup-uv@v10.3.0
         with:
           enable-cache: true
       - run: uv sync --locked
