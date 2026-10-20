@@ -102,10 +102,8 @@ export function PaginaInicio() {
             Carregando seu painel…
           </p>
         )}
-        <CartaoSessao
-          emissor={`${config.keycloakUrl}/realms/${config.realm}`}
-          expiraEm={auth.user?.expires_at}
-        />
+        {/* O emissor vem do próprio token, não da config: é o que a API de fato confere. */}
+        <CartaoSessao emissor={auth.user?.profile.iss} expiraEm={auth.user?.expires_at} />
       </main>
     </div>
   );
@@ -219,7 +217,13 @@ function useAgora(intervaloMs = 1000): number {
   return agora;
 }
 
-function CartaoSessao({ emissor, expiraEm }: { emissor: string; expiraEm: number | undefined }) {
+function CartaoSessao({
+  emissor,
+  expiraEm,
+}: {
+  emissor: string | undefined;
+  expiraEm: number | undefined;
+}) {
   const agora = useAgora();
   const restante = expiraEm === undefined ? undefined : expiraEm - Math.floor(agora / 1000);
 
@@ -229,7 +233,7 @@ function CartaoSessao({ emissor, expiraEm }: { emissor: string; expiraEm: number
       <dl className="mt-6 space-y-5 text-sm">
         <div>
           <dt className="text-suave">Emissor do token</dt>
-          <dd className="mt-1 break-all font-mono text-xs">{emissor}</dd>
+          <dd className="mt-1 break-all font-mono text-xs">{emissor ?? "—"}</dd>
         </div>
         <div>
           <dt className="text-suave">Expira em</dt>

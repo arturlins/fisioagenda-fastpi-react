@@ -5,8 +5,15 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ConfiguracaoProvider } from "../contexto-config";
 import { MARCADOR_RELOGIN, PaginaInicio } from "./inicio";
 
+// Emissor do token diferente do da config: o cartão tem de mostrar o `iss` do token.
+const EMISSOR_DO_TOKEN = "https://auth.token.sslip.io/realms/fisioagenda";
+
 const auth = vi.hoisted(() => ({
-  user: { access_token: "abc", expires_at: Math.floor(Date.now() / 1000) + 900 },
+  user: {
+    access_token: "abc",
+    expires_at: Math.floor(Date.now() / 1000) + 900,
+    profile: { iss: "https://auth.token.sslip.io/realms/fisioagenda" } as { iss?: string },
+  },
   signinRedirect: vi.fn(),
   signoutRedirect: vi.fn(),
 }));
@@ -48,6 +55,7 @@ function renderizar() {
 
 describe("PaginaInicio", () => {
   beforeEach(() => {
+    auth.user.profile.iss = EMISSOR_DO_TOKEN;
     auth.signinRedirect.mockReset();
     auth.signoutRedirect.mockReset();
     sessionStorage.clear();
@@ -79,7 +87,18 @@ describe("PaginaInicio", () => {
     expect(within(centro).getByText("Administrador")).toBeInTheDocument();
     const farol = screen.getByRole("listitem", { name: /unidade farol/i });
     expect(within(farol).getByText("Comum")).toBeInTheDocument();
-    expect(screen.getByText("https://auth.x.sslip.io/realms/fisioagenda")).toBeInTheDocument();
+    expect(screen.getByText(EMISSOR_DO_TOKEN)).toBeInTheDocument();
+  });
+
+  it("token sem iss mostra o emissor como ausente", async () => {
+    // O beforeEach devolve o iss para os outros testes.
+    delete auth.user.profile.iss;
+    responderCom({ usuario, vinculos: [] });
+    renderizar();
+
+    const emissor = (await screen.findByText("Emissor do token")).nextElementSibling;
+    expect(emissor).toHaveTextContent("—");
+    expect(screen.queryByText(/realms\/fisioagenda/)).not.toBeInTheDocument();
   });
 
   it("responsável pela conta sem vínculo vê que administra tudo", async () => {
