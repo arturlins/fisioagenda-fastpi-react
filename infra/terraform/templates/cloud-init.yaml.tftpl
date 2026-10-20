@@ -1,0 +1,52 @@
+#cloud-config
+# Do servidor vazio à pilha no ar, sem nenhum passo manual.
+
+groups:
+  - docker
+
+users:
+  - name: deploy
+    groups: [sudo, docker]
+    shell: /bin/bash
+    sudo: "ALL=(ALL) NOPASSWD:ALL"
+    lock_passwd: true
+    ssh_authorized_keys:
+      - ${jsonencode(chave_ssh)}
+
+disable_root: true
+ssh_pwauth: false
+
+package_update: true
+package_upgrade: true
+packages:
+  - ca-certificates
+  - curl
+
+write_files:
+  - path: /opt/fisioagenda/compose.yaml
+    encoding: b64
+    content: ${compose}
+    permissions: "0644"
+  - path: /opt/fisioagenda/.env
+    encoding: b64
+    content: ${env}
+    permissions: "0600"
+  - path: /opt/fisioagenda/keycloak/realm-fisioagenda.json
+    encoding: b64
+    content: ${realm}
+    permissions: "0644"
+  - path: /opt/fisioagenda/db/init/01-bancos-e-extensoes.sh
+    encoding: b64
+    content: ${db_init}
+    permissions: "0755"
+
+runcmd:
+  # Docker do repositório oficial — o pacote da distribuição fica para trás.
+  - install -m 0755 -d /etc/apt/keyrings
+  - curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+  - chmod a+r /etc/apt/keyrings/docker.asc
+  - echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu noble stable" > /etc/apt/sources.list.d/docker.list
+  - apt-get update
+  - DEBIAN_FRONTEND=noninteractive apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+  - systemctl enable --now docker
+  - docker compose --project-directory /opt/fisioagenda up -d --pull always

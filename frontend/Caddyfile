@@ -1,0 +1,58 @@
+# Borda única do servidor: serve o SPA e faz proxy da API e do Keycloak.
+# DOMINIO_BASE e TLS_MODO chegam do .env gerado pelo Terraform.
+{
+	admin off
+}
+
+(seguranca) {
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+}
+
+app.{$DOMINIO_BASE} {
+	tls {$TLS_MODO}
+	import seguranca
+	encode zstd gzip
+	header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data:; connect-src 'self' https://api.{$DOMINIO_BASE} https://auth.{$DOMINIO_BASE}; frame-ancestors 'none'; base-uri 'self'; form-action 'self' https://auth.{$DOMINIO_BASE}"
+
+	# A mesma imagem em qualquer ambiente: os endereços saem do domínio do servidor.
+	handle /config.json {
+		header Content-Type "application/json"
+		header Cache-Control "no-store"
+		respond `{"keycloakUrl":"https://auth.{$DOMINIO_BASE}","realm":"fisioagenda","clientId":"fisioagenda-web","apiUrl":"https://api.{$DOMINIO_BASE}"}` 200
+	}
+
+	handle /assets/* {
+		root * /srv
+		header Cache-Control "public, max-age=31536000, immutable"
+		file_server
+	}
+
+	handle {
+		root * /srv
+		header Cache-Control "no-cache"
+		try_files {path} /index.html
+		file_server
+	}
+}
+
+api.{$DOMINIO_BASE} {
+	tls {$TLS_MODO}
+	import seguranca
+	encode zstd gzip
+	reverse_proxy api:8000
+}
+
+auth.{$DOMINIO_BASE} {
+	tls {$TLS_MODO}
+	import seguranca
+	# Console e Admin API inteiros, e o realm master, não ficam na internet: o backend
+	# fala com a Admin API pela rede interna (keycloak:8080), nunca por aqui.
+	@console path /admin /admin/* /realms/master /realms/master/*
+	respond @console 404
+	reverse_proxy keycloak:8080
+}

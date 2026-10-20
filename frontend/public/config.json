@@ -1,0 +1,6 @@
+{
+  "keycloakUrl": "http://127.0.0.1:8080",
+  "realm": "fisioagenda",
+  "clientId": "fisioagenda-web",
+  "apiUrl": "http://localhost:8000"
+}

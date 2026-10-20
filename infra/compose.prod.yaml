@@ -1,0 +1,138 @@
+# Pilha de produção. Entregue no servidor pelo cloud-init (infra/terraform) e
+# configurada só pelo .env que o Terraform gera — nenhuma edição à mão.
+name: fisioagenda-prod
+
+x-api-ambiente: &api-ambiente
+  AMBIENTE: producao
+  DOCS_HABILITADA: "true"
+  BANCO_HOST: postgres
+  BANCO_PORTA: "5432"
+  BANCO_NOME: fisioagenda
+  BANCO_USUARIO: ${APP_DB_USER:?defina APP_DB_USER}
+  BANCO_SENHA: ${APP_DB_PASSWORD:?defina APP_DB_PASSWORD}
+  # Backchannel pela rede interna; o emissor do token é a URL pública.
+  KEYCLOAK_URL: http://keycloak:8080
+  KEYCLOAK_URL_PUBLICA: https://auth.${DOMINIO_BASE:?defina DOMINIO_BASE}
+  KEYCLOAK_CLIENT_SECRET: ${KEYCLOAK_BACKEND_CLIENT_SECRET:?defina KEYCLOAK_BACKEND_CLIENT_SECRET}
+  CORS_ORIGENS: '["https://app.${DOMINIO_BASE}"]'
+  LOG_FORMATO: json
+  TZ: America/Maceio
+
+x-imagem-api: &imagem-api ${REGISTRO:?defina REGISTRO}/fisioagenda-api:${VERSAO_IMAGENS:?defina VERSAO_IMAGENS}
+
+services:
+  postgres:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: fisioagenda
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_SUPERUSER_PASSWORD:?defina POSTGRES_SUPERUSER_PASSWORD}
+      APP_DB_USER: ${APP_DB_USER}
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD}
+      KEYCLOAK_DB_USER: ${KEYCLOAK_DB_USER:?defina KEYCLOAK_DB_USER}
+      KEYCLOAK_DB_PASSWORD: ${KEYCLOAK_DB_PASSWORD:?defina KEYCLOAK_DB_PASSWORD}
+      TZ: America/Maceio
+    volumes:
+      - postgres-dados:/var/lib/postgresql
+      - ./db/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d fisioagenda"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 15s
+
+  keycloak:
+    image: ${REGISTRO}/fisioagenda-keycloak:${VERSAO_IMAGENS}
+    restart: unless-stopped
+    command:
+      - start
+      - --optimized
+      - --import-realm
+      - --spi-admin--allowed-system-variables=KEYCLOAK_BACKEND_CLIENT_SECRET,FISIOAGENDA_APP_URL,FISIOAGENDA_API_URL
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN_USER:?defina KEYCLOAK_ADMIN_USER}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:?defina KEYCLOAK_ADMIN_PASSWORD}
+      KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
+      KC_DB_USERNAME: ${KEYCLOAK_DB_USER}
+      KC_DB_PASSWORD: ${KEYCLOAK_DB_PASSWORD}
+      KC_HOSTNAME: https://auth.${DOMINIO_BASE}
+      # A API alcança o Keycloak pela rede interna; o `iss` continua o público.
+      KC_HOSTNAME_BACKCHANNEL_DYNAMIC: "true"
+      KC_HTTP_ENABLED: "true"
+      KC_PROXY_HEADERS: xforwarded
+      KEYCLOAK_BACKEND_CLIENT_SECRET: ${KEYCLOAK_BACKEND_CLIENT_SECRET}
+      FISIOAGENDA_APP_URL: https://app.${DOMINIO_BASE}
+      FISIOAGENDA_API_URL: https://api.${DOMINIO_BASE}
+      # O padrão do kc.sh é 70% da RAM; num host de 4 GB dividido com Postgres e API,
+      # o teto fica em 40% (~1,6 GB). Substitui o padrão inteiro do kc.sh 26.8.
+      JAVA_OPTS_KC_HEAP: "-XX:MaxRAMPercentage=40"
+      TZ: America/Maceio
+    volumes:
+      - ./keycloak/realm-fisioagenda.json:/opt/keycloak/data/import/realm-fisioagenda.json:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      # Pronto = HTTP 200. Procurar "status": "UP" no corpo dava falso positivo no 26.8:
+      # durante o bootstrap a resposta é 503, mas a checagem "Graceful Shutdown" já vem UP.
+      test:
+        - CMD-SHELL
+        - >-
+          exec 3<>/dev/tcp/127.0.0.1/9000 &&
+          printf 'GET /health/ready HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n' >&3 &&
+          grep -q '^HTTP/1.1 200 ' <&3
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+
+  migracao:
+    image: *imagem-api
+    command: ["alembic", "upgrade", "head"]
+    environment: *api-ambiente
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  semeadura:
+    image: *imagem-api
+    command: ["python", "-m", "scripts.semear"]
+    environment:
+      <<: *api-ambiente
+      SEMEAR_SENHA: ${SEMEAR_SENHA:?defina SEMEAR_SENHA}
+    depends_on:
+      migracao:
+        condition: service_completed_successfully
+      keycloak:
+        condition: service_healthy
+    restart: "no"
+
+  api:
+    image: *imagem-api
+    restart: unless-stopped
+    environment: *api-ambiente
+    depends_on:
+      semeadura:
+        condition: service_completed_successfully
+
+  web:
+    image: ${REGISTRO}/fisioagenda-web:${VERSAO_IMAGENS}
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      DOMINIO_BASE: ${DOMINIO_BASE}
+      TLS_MODO: ${TLS_MODO:?defina TLS_MODO}
+    volumes:
+      - caddy-dados:/data
+      - caddy-config:/config
+
+volumes:
+  postgres-dados:
+  caddy-dados:
+  caddy-config:

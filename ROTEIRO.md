@@ -1,6 +1,7 @@
 # Roteiro de avaliação — FisioAgenda
 
 Guia para exercitar a API e localizar cada requisito no código. Leva cerca de dez minutos.
+A AV3 — frontend, imagens, CI e deploy com Terraform — está na [seção 8](#8-av3--deploy-e-frontend).
 
 O sistema é um agendamento de fisioterapia multi-clínica, de uso interno. O paciente não acessa
 o sistema — não existe credencial de paciente em lugar nenhum do modelo.
@@ -113,7 +114,7 @@ Detalhamento e justificativa de cada decisão em `.claude/arquitetura.md`.
 
 ```bash
 cd backend
-uv run pytest        # 82 testes
+uv run pytest        # 97 testes
 uv run ruff check .  # lint, incluindo regras de segurança
 uv run mypy app servidor.py tests alembic/env.py   # tipagem estrita
 ```
@@ -161,3 +162,86 @@ O banco, porém, já nasce com as **18 tabelas** do sistema completo — agenda,
 financeiro incluídos —, com os enums nativos, a constraint de exclusão que impede sobreposição
 de horário do profissional e as triggers de capacidade e de recálculo financeiro. Os módulos
 seguintes serão construídos sobre esse esquema, sem migração destrutiva.
+
+---
+
+## 8. AV3 — deploy e frontend
+
+A AV3 coloca o FisioAgenda no ar como aplicação fullstack **implantada por código**: um
+`terraform apply` cria a infraestrutura inteira na Hetzner, e `destroy` → `apply` a recria do
+zero, em outro IP, sem nenhum passo manual — nem certificado, nem migration, nem usuário de
+demonstração. Passo a passo de cada comando no [`README.md`](README.md#deploy).
+
+### Endereços
+
+O ambiente fica no ar só durante a janela da apresentação. Os endereços derivam do IP do
+servidor (`terraform output`):
+
+| Endereço | O que é |
+|---|---|
+| `https://app.<ip-com-traços>.sslip.io` | a aplicação React |
+| `https://api.<ip-com-traços>.sslip.io/docs` | Swagger da API, com login real por PKCE |
+| `https://auth.<ip-com-traços>.sslip.io` | Keycloak — só o realm `fisioagenda`; console administrativo responde 404 |
+
+Os usuários são os mesmos do seed (seção 2). Em produção a senha **não** é a de
+desenvolvimento: o Terraform a gera e ela só sai por `terraform output -raw senha_demonstracao`.
+
+Para rodar o frontend localmente: `cd frontend && bun install && bun run dev`, com a pilha da
+seção 1 de pé, e abrir **`http://localhost:5173`** (não `127.0.0.1`).
+
+### O que cada tela prova
+
+| Tela | O que prova |
+|---|---|
+| Entrada, com o cadeado e a URL `app.…sslip.io` | HTTPS válido, emitido pelo Let's Encrypt sem domínio próprio e sem passo manual |
+| Login do Keycloak com o tema FisioAgenda, em `auth.…` | identidade fora da aplicação: a senha nunca passa pelo SPA nem pela API |
+| Painel do Bruno — Centro **Administrador**, Farol **Comum** | JWT de ponta a ponta: o SPA chama `/api/v1/auth/eu` com `Bearer`, a API valida o token e lê o papel **por clínica** do banco |
+| Cartão "Sessão" — emissor e expiração | o `iss` do token é a URL pública do Keycloak, a mesma que a API exige |
+| F5 no painel volta sem pedir senha; DevTools → Storage sem token | tokens só em memória; a recarga é resolvida pela sessão SSO |
+| Sair | logout no Keycloak, não só no navegador |
+| `/docs` publicado | Swagger com as responses de erro de cada rota |
+| `auth.…/admin/master/console/` → 404 | o console administrativo não está na internet |
+
+### Requisito → onde
+
+| Requisito | Onde ver | Como comprovar |
+|---|---|---|
+| **Docker** | três Dockerfiles: `backend/`, `frontend/` (Caddy + SPA), `keycloak/` (build otimizado com o tema) | imagens no GHCR, tag = SHA do commit, com SBOM e provenance |
+| **Migrations** | serviço `migracao` em `infra/compose.prod.yaml` — `alembic upgrade head` | roda sozinho a cada subida, antes do seed e da API (`depends_on: service_completed_successfully`) |
+| **Swagger** | `/docs` publicado no ambiente implantado (`DOCS_HABILITADA`) | responses de erro documentadas por rota; "Authorize" faz login real |
+| **JWT / Auth** | `app/core/seguranca.py` (API) e `frontend/src/` (Authorization Code + PKCE S256) | login real no React; rota protegida recusa sem token (smoke) |
+| **Keycloak** | `keycloak/realm-fisioagenda.json` — um realm para dev e produção, URLs por placeholder | em produção o client de testes (senha direta) é removido pelo Terraform |
+| **Terraform** (extra) | `infra/terraform/` — IP, firewall, chave SSH, servidor com cloud-init | `terraform test` no CI; `destroy` → `apply` abaixo |
+| **CI** | `.github/workflows/ci.yaml` | testes, lint, Terraform e Trivy em todo push; publicação só no `main` |
+
+### Verificações
+
+```bash
+# a partir da raiz do repositório
+(cd backend && uv run pytest)               # 97 testes
+(cd frontend && bun run test)               # 36 testes unitários
+(cd frontend && bun run e2e)                # 3 testes de ponta a ponta (login, recarga, logout)
+(cd infra/terraform && terraform init -backend=false && terraform test)   # 4 testes, provider simulado
+python -I infra/smoke_test.py <dominio> --aguardar 900   # 9 verificações contra o ambiente no ar
+```
+
+### A sequência que recria tudo
+
+O ponto central da AV3, tirado do caso AbacatePay: o dano de um incidente cresce quando a
+infraestrutura não pode ser recriada.
+
+```bash
+terraform -chdir=infra/terraform output ip          # anota o IP atual
+terraform -chdir=infra/terraform destroy            # tudo some: servidor, firewall, IP
+terraform -chdir=infra/terraform apply              # tudo volta, em outro IP
+python -I infra/smoke_test.py "$(terraform -chdir=infra/terraform output -raw dominio_base)" --aguardar 900
+```
+
+O smoke termina com nove `[OK]` no domínio novo, e o painel funciona na URL nova sem que nada
+tenha sido editado. A soma dos três tempos é o tempo de recuperação de um ambiente perdido.
+
+### Limitações declaradas
+
+Sem alta disponibilidade, backup ou monitoramento contínuo; state do Terraform local; um
+servidor só. O dado é de demonstração e é recriado pelo seed a cada `apply` — recriar a
+infraestrutura não recupera dado, e é isso que backup resolveria.

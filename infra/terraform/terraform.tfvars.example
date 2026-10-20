@@ -1,0 +1,14 @@
+# Copie para terraform.tfvars (ignorado pelo Git) e preencha.
+# O token da Hetzner vai em HCLOUD_TOKEN, nunca aqui.
+
+# git rev-parse origin/main — o commit cujas imagens o CI publicou.
+versao_imagens = "0123456789abcdef0123456789abcdef01234567"
+
+# Seu IP público com /32 (curl -s https://api.ipify.org).
+ssh_permitido_cidr = "203.0.113.7/32"
+
+acme_email = "voce@exemplo.com"
+
+# ssh_chave_publica_arquivo = "~/.ssh/id_ed25519.pub"
+# tipo_servidor             = "cpx22"  # alternativa: cpx32
+# localizacao               = "nbg1"   # alternativa: hel1

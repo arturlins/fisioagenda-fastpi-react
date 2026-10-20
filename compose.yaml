@@ -29,7 +29,7 @@ services:
       start_period: 15s
 
   keycloak:
-    image: quay.io/keycloak/keycloak:26.4
+    image: quay.io/keycloak/keycloak:26.8.1
     container_name: fisioagenda-keycloak
     restart: unless-stopped
     # Os ${VAR} do realm JSON só são interpolados para as variáveis explicitamente
@@ -38,7 +38,7 @@ services:
     command:
       - start-dev
       - --import-realm
-      - --spi-admin--allowed-system-variables=KEYCLOAK_BACKEND_CLIENT_SECRET,KEYCLOAK_TESTES_CLIENT_SECRET
+      - --spi-admin--allowed-system-variables=KEYCLOAK_BACKEND_CLIENT_SECRET,KEYCLOAK_TESTES_CLIENT_SECRET,FISIOAGENDA_APP_URL,FISIOAGENDA_API_URL
     environment:
       KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN_USER:-admin}
       KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:?defina KEYCLOAK_ADMIN_PASSWORD no .env}
@@ -50,23 +50,31 @@ services:
       # Lidos pelo realm-fisioagenda.json na importação.
       KEYCLOAK_BACKEND_CLIENT_SECRET: ${KEYCLOAK_BACKEND_CLIENT_SECRET:?defina KEYCLOAK_BACKEND_CLIENT_SECRET no .env}
       KEYCLOAK_TESTES_CLIENT_SECRET: ${KEYCLOAK_TESTES_CLIENT_SECRET:?defina KEYCLOAK_TESTES_CLIENT_SECRET no .env}
+      # URLs do realm. Em produção vêm do Terraform; aqui, os endereços locais.
+      # O app é aberto em localhost:5173 — 127.0.0.1:5173 não está liberado.
+      FISIOAGENDA_APP_URL: ${FISIOAGENDA_APP_URL:-http://localhost:5173}
+      FISIOAGENDA_API_URL: ${FISIOAGENDA_API_URL:-http://localhost:8000}
       TZ: America/Maceio
     ports:
       - "127.0.0.1:8080:8080"
     volumes:
       - ./keycloak:/opt/keycloak/data/import:ro
+      # start-dev desliga o cache de tema: editar o CSS e recarregar a página basta.
+      - ./keycloak/themes/fisioagenda:/opt/keycloak/themes/fisioagenda:ro
     depends_on:
       postgres:
         condition: service_healthy
     # A imagem não traz curl nem wget; /dev/tcp do bash resolve.
     # Desde a versão 25 o endpoint de saúde vive na porta de gerenciamento (9000).
     healthcheck:
+      # Pronto = HTTP 200. Procurar "status": "UP" no corpo dava falso positivo no 26.8:
+      # durante o bootstrap a resposta é 503, mas a checagem "Graceful Shutdown" já vem UP.
       test:
         - CMD-SHELL
         - >-
           exec 3<>/dev/tcp/127.0.0.1/9000 &&
           printf 'GET /health/ready HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n' >&3 &&
-          grep -q '"status": "UP"' <&3
+          grep -q '^HTTP/1.1 200 ' <&3
       interval: 10s
       timeout: 5s
       retries: 20
