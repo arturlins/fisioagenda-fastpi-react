@@ -1,0 +1,20 @@
+@import "tailwindcss";
+
+@theme {
+  --color-fundo: #0a0a0c;
+  --color-superficie: #121216;
+  --color-borda: #24242b;
+  --color-texto: #ececf1;
+  --color-suave: #8d8d99;
+  --color-acento: #b4e4c8;
+  --color-perigo: #f2a29b;
+  --font-display: "Fraunces Variable", Georgia, serif;
+  --font-sans: "Inter Variable", system-ui, sans-serif;
+}
+
+html {
+  background: var(--color-fundo);
+  color: var(--color-texto);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
