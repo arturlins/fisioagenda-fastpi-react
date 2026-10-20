@@ -34,7 +34,7 @@
   --fa-acento: #b4e4c8;
   --fa-acento-forte: #9fd6b6;
   --fa-anel: rgb(180 228 200 / 0.16);
-  --fa-erro: #f4a3a3;
+  --fa-perigo: #f2a29b;
   --fa-raio-campo: 10px;
 
   --pf-v5-global--FontFamily--text: "Inter", system-ui, sans-serif;
@@ -55,8 +55,8 @@
   --pf-v5-global--primary-color--400: var(--fa-fundo);
   --pf-v5-global--link--Color: var(--fa-acento);
   --pf-v5-global--link--Color--hover: var(--fa-acento-forte);
-  --pf-v5-global--danger-color--100: var(--fa-erro);
-  --pf-v5-global--danger-color--200: var(--fa-erro);
+  --pf-v5-global--danger-color--100: var(--fa-perigo);
+  --pf-v5-global--danger-color--200: var(--fa-perigo);
 }
 
 .login-pf body,
@@ -179,12 +179,12 @@ div.pf-v5-c-login__main-header {
 
 .pf-v5-c-form-control.pf-m-error::before,
 .pf-v5-c-form-control:has(> [aria-invalid="true"])::before {
-  border-color: var(--fa-erro);
+  border-color: var(--fa-perigo);
 }
 
 .pf-v5-c-form-control.pf-m-error:focus-within,
 .pf-v5-c-form-control:has(> [aria-invalid="true"]):focus-within {
-  box-shadow: 0 0 0 3px rgb(244 163 163 / 0.16);
+  box-shadow: 0 0 0 3px rgb(242 162 155 / 0.16);
 }
 
 .pf-v5-c-form-control > input::placeholder {
@@ -247,12 +247,12 @@ div.pf-v5-c-login__main-header {
 
 .pf-v5-c-input-group:has([aria-invalid="true"]) .pf-v5-c-form-control::before,
 .pf-v5-c-input-group:has([aria-invalid="true"]) .pf-v5-c-button.pf-m-control::after {
-  border-color: var(--fa-erro);
+  border-color: var(--fa-perigo);
 }
 
 .pf-v5-c-helper-text__item-text.pf-m-error,
 .kc-feedback-text.pf-m-error {
-  color: var(--fa-erro);
+  color: var(--fa-perigo);
 }
 
 /* "Lembrar de mim", quando habilitado no realm. */
@@ -329,7 +329,7 @@ div.pf-v5-c-login__main-header {
   --pf-v5-c-alert--BoxShadow: none;
   --pf-v5-c-alert--m-inline--BackgroundColor: rgb(236 236 241 / 0.04);
   --pf-v5-c-alert--m-inline--m-info--BackgroundColor: rgb(236 236 241 / 0.04);
-  --pf-v5-c-alert--m-inline--m-danger--BackgroundColor: rgb(244 163 163 / 0.08);
+  --pf-v5-c-alert--m-inline--m-danger--BackgroundColor: rgb(242 162 155 / 0.08);
   --pf-v5-c-alert--m-inline--m-warning--BackgroundColor: rgb(240 200 120 / 0.08);
   --pf-v5-c-alert--m-inline--m-success--BackgroundColor: rgb(180 228 200 / 0.08);
   border: 1px solid var(--fa-borda-forte);
@@ -341,7 +341,7 @@ div.pf-v5-c-login__main-header {
 }
 
 .pf-v5-c-alert.pf-m-danger {
-  border-color: rgb(244 163 163 / 0.35);
+  border-color: rgb(242 162 155 / 0.35);
 }
 
 .pf-v5-c-alert.pf-m-success {
@@ -355,7 +355,7 @@ div.pf-v5-c-login__main-header {
 }
 
 .pf-v5-c-alert.pf-m-danger .pf-v5-c-alert__icon {
-  color: var(--fa-erro);
+  color: var(--fa-perigo);
 }
 
 .pf-v5-c-alert.pf-m-success .pf-v5-c-alert__icon {
