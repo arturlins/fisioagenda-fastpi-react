@@ -1,6 +1,10 @@
 {
   "realm": "fisioagenda",
   "displayName": "FisioAgenda",
+  "loginTheme": "fisioagenda",
+  "internationalizationEnabled": true,
+  "supportedLocales": ["pt-BR"],
+  "defaultLocale": "pt-BR",
   "enabled": true,
   "sslRequired": "external",
 

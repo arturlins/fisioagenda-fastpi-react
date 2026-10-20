@@ -1,0 +1,392 @@
+/*
+ * Tema de login do FisioAgenda, sobre o keycloak.v2 (PatternFly 5, tema escuro).
+ *
+ * Os tokens globais do PatternFly são redefinidos na raiz; os de componente, no
+ * próprio componente — o PatternFly os declara na classe do componente, então
+ * redefini-los só na raiz não pega.
+ */
+
+@font-face {
+  font-family: "Fraunces";
+  src: url("../fonts/fraunces-latin-wght-normal.woff2") format("woff2-variations");
+  font-weight: 100 900;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Inter";
+  src: url("../fonts/inter-latin-wght-normal.woff2") format("woff2-variations");
+  font-weight: 100 900;
+  font-display: swap;
+}
+
+/* Tokens do FisioAgenda — os mesmos do SPA. Dark sempre, independente do sistema. */
+:root,
+:root.pf-v5-theme-dark {
+  color-scheme: dark;
+
+  --fa-fundo: #0a0a0c;
+  --fa-superficie: #121216;
+  --fa-borda: #24242b;
+  --fa-borda-forte: #34343d;
+  --fa-borda-hover: #4a4a55;
+  --fa-texto: #ececf1;
+  --fa-suave: #8d8d99;
+  --fa-acento: #b4e4c8;
+  --fa-acento-forte: #9fd6b6;
+  --fa-anel: rgb(180 228 200 / 0.16);
+  --fa-erro: #f4a3a3;
+  --fa-raio-campo: 10px;
+
+  --pf-v5-global--FontFamily--text: "Inter", system-ui, sans-serif;
+  --pf-v5-global--FontFamily--heading: "Fraunces", Georgia, serif;
+  --pf-v5-global--FontFamily--text--vf: "Inter", system-ui, sans-serif;
+  --pf-v5-global--FontFamily--heading--vf: "Fraunces", Georgia, serif;
+  --pf-v5-global--BackgroundColor--100: var(--fa-superficie);
+  --pf-v5-global--BackgroundColor--200: var(--fa-fundo);
+  --pf-v5-global--BackgroundColor--300: var(--fa-superficie);
+  --pf-v5-global--BackgroundColor--400: var(--fa-fundo);
+  --pf-v5-global--Color--100: var(--fa-texto);
+  --pf-v5-global--Color--200: var(--fa-suave);
+  --pf-v5-global--BorderColor--100: var(--fa-borda);
+  --pf-v5-global--BorderColor--400: var(--fa-borda-forte);
+  --pf-v5-global--primary-color--100: var(--fa-acento);
+  --pf-v5-global--primary-color--200: var(--fa-acento-forte);
+  --pf-v5-global--primary-color--300: var(--fa-acento);
+  --pf-v5-global--primary-color--400: var(--fa-fundo);
+  --pf-v5-global--link--Color: var(--fa-acento);
+  --pf-v5-global--link--Color--hover: var(--fa-acento-forte);
+  --pf-v5-global--danger-color--100: var(--fa-erro);
+  --pf-v5-global--danger-color--200: var(--fa-erro);
+}
+
+.login-pf body,
+html,
+body {
+  background:
+    radial-gradient(1200px 600px at 15% -10%, rgb(180 228 200 / 0.1), transparent 60%),
+    var(--fa-fundo);
+  color: var(--fa-texto);
+  font-family: "Inter", system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+.pf-v5-c-login {
+  background: transparent;
+}
+
+/* ---- Marca ---------------------------------------------------------------- */
+
+#kc-header,
+#kc-header-wrapper {
+  font-family: "Fraunces", Georgia, serif;
+  font-size: 1.375rem;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  text-transform: none;
+  color: var(--fa-texto) !important;
+}
+
+/* Ponto no tom de acento depois do nome. */
+#kc-header-wrapper::after {
+  content: "";
+  display: inline-block;
+  width: 0.32em;
+  height: 0.32em;
+  margin-inline-start: 0.1em;
+  border-radius: 50%;
+  background: var(--fa-acento);
+}
+
+/* ---- Cartão --------------------------------------------------------------- */
+
+.pf-v5-c-login__main {
+  background: var(--fa-superficie);
+  border: 1px solid var(--fa-borda);
+  border-radius: 20px;
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.04),
+    0 40px 120px rgb(0 0 0 / 0.55);
+}
+
+/* Sem a faixa azul do keycloak.v2; o título ocupa a largura quando não há seletor de idioma. */
+div.pf-v5-c-login__main-header {
+  border-top: 0;
+  grid-template-columns: 1fr auto;
+}
+
+#kc-page-title,
+.pf-v5-c-login__main-header .pf-v5-c-title {
+  font-family: "Fraunces", Georgia, serif;
+  font-weight: 500;
+  font-size: 2.25rem;
+  letter-spacing: -0.025em;
+  line-height: 1.1;
+  color: var(--fa-texto);
+}
+
+/* ---- Formulário ----------------------------------------------------------- */
+
+.pf-v5-c-form__label,
+.pf-v5-c-form__label-text {
+  color: var(--fa-texto);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+}
+
+.pf-v5-c-form__label-required {
+  color: var(--fa-acento);
+}
+
+.pf-v5-c-form-control {
+  --pf-v5-c-form-control--BackgroundColor: var(--fa-fundo);
+  --pf-v5-c-form-control--Color: var(--fa-texto);
+  --pf-v5-c-form-control--PaddingTop: 0.625rem;
+  --pf-v5-c-form-control--PaddingBottom: 0.625rem;
+  --pf-v5-c-form-control--m-readonly--BackgroundColor: var(--fa-superficie);
+  border-radius: var(--fa-raio-campo);
+  color: var(--fa-texto);
+  transition: box-shadow 150ms ease;
+}
+
+.pf-v5-c-form-control::before {
+  border: 1px solid var(--fa-borda-forte);
+  border-radius: inherit;
+  transition: border-color 150ms ease;
+}
+
+.pf-v5-c-form-control::after {
+  border: 0;
+}
+
+.pf-v5-c-form-control:hover::before {
+  border-color: var(--fa-borda-hover);
+}
+
+.pf-v5-c-form-control:focus-within::before {
+  border-color: var(--fa-acento);
+}
+
+.pf-v5-c-form-control:focus-within {
+  box-shadow: 0 0 0 3px var(--fa-anel);
+}
+
+/* O foco é desenhado no contêiner (borda de acento + anel); o contorno nativo do input sobraria. */
+.pf-v5-c-form-control > :is(input, select, textarea):focus {
+  outline: none;
+}
+
+.pf-v5-c-form-control.pf-m-error::before,
+.pf-v5-c-form-control:has(> [aria-invalid="true"])::before {
+  border-color: var(--fa-erro);
+}
+
+.pf-v5-c-form-control.pf-m-error:focus-within,
+.pf-v5-c-form-control:has(> [aria-invalid="true"]):focus-within {
+  box-shadow: 0 0 0 3px rgb(244 163 163 / 0.16);
+}
+
+.pf-v5-c-form-control > input::placeholder {
+  color: var(--fa-suave);
+}
+
+/* Senha + botão de exibir: um campo só, com o anel de foco no conjunto. */
+.pf-v5-c-input-group {
+  --pf-v5-c-input-group__item--BorderLeftWidth: 0;
+  border-radius: var(--fa-raio-campo);
+  transition: box-shadow 150ms ease;
+}
+
+.pf-v5-c-input-group:focus-within {
+  box-shadow: 0 0 0 3px var(--fa-anel);
+}
+
+.pf-v5-c-input-group .pf-v5-c-form-control:focus-within {
+  box-shadow: none;
+}
+
+.pf-v5-c-input-group > .pf-v5-c-input-group__item:not(:last-child) .pf-v5-c-form-control {
+  border-start-end-radius: 0;
+  border-end-end-radius: 0;
+}
+
+.pf-v5-c-input-group > .pf-v5-c-input-group__item:not(:last-child) .pf-v5-c-form-control::before {
+  border-inline-end: 0;
+}
+
+.pf-v5-c-input-group .pf-v5-c-button.pf-m-control {
+  min-width: 2.75rem;
+  height: 100%;
+  background: var(--fa-fundo);
+  color: var(--fa-suave);
+  border-radius: 0 var(--fa-raio-campo) var(--fa-raio-campo) 0;
+  transition: color 150ms ease;
+}
+
+.pf-v5-c-input-group .pf-v5-c-button.pf-m-control::after {
+  border: 1px solid var(--fa-borda-forte);
+  border-inline-start: 0;
+  border-radius: inherit;
+  transition: border-color 150ms ease;
+}
+
+.pf-v5-c-input-group .pf-v5-c-button.pf-m-control:hover {
+  color: var(--fa-texto);
+}
+
+.pf-v5-c-input-group:hover .pf-v5-c-form-control::before,
+.pf-v5-c-input-group:hover .pf-v5-c-button.pf-m-control::after {
+  border-color: var(--fa-borda-hover);
+}
+
+.pf-v5-c-input-group:focus-within .pf-v5-c-form-control::before,
+.pf-v5-c-input-group:focus-within .pf-v5-c-button.pf-m-control::after {
+  border-color: var(--fa-acento);
+}
+
+.pf-v5-c-input-group:has([aria-invalid="true"]) .pf-v5-c-form-control::before,
+.pf-v5-c-input-group:has([aria-invalid="true"]) .pf-v5-c-button.pf-m-control::after {
+  border-color: var(--fa-erro);
+}
+
+.pf-v5-c-helper-text__item-text.pf-m-error,
+.kc-feedback-text.pf-m-error {
+  color: var(--fa-erro);
+}
+
+/* "Lembrar de mim", quando habilitado no realm. */
+.pf-v5-c-check__input {
+  accent-color: var(--fa-acento);
+}
+
+.pf-v5-c-check__label {
+  color: var(--fa-suave);
+}
+
+/* ---- Links e botões ------------------------------------------------------- */
+
+.pf-v5-c-login__main a:not(.pf-v5-c-button) {
+  color: var(--fa-acento);
+  font-size: 0.8125rem;
+  text-decoration: none;
+  text-underline-offset: 3px;
+}
+
+.pf-v5-c-login__main a:not(.pf-v5-c-button):hover {
+  color: var(--fa-acento-forte);
+  text-decoration: underline;
+}
+
+.pf-v5-c-button {
+  --pf-v5-c-button--m-primary--BackgroundColor: var(--fa-acento);
+  --pf-v5-c-button--m-primary--hover--BackgroundColor: var(--fa-acento-forte);
+  --pf-v5-c-button--m-primary--focus--BackgroundColor: var(--fa-acento-forte);
+  --pf-v5-c-button--m-primary--active--BackgroundColor: var(--fa-acento-forte);
+  --pf-v5-c-button--m-primary--Color: var(--fa-fundo);
+  --pf-v5-c-button--m-primary--hover--Color: var(--fa-fundo);
+  --pf-v5-c-button--m-primary--focus--Color: var(--fa-fundo);
+  --pf-v5-c-button--m-primary--active--Color: var(--fa-fundo);
+  --pf-v5-c-button--m-secondary--Color: var(--fa-texto);
+  --pf-v5-c-button--m-secondary--hover--Color: var(--fa-texto);
+  --pf-v5-c-button--m-secondary--focus--Color: var(--fa-texto);
+  --pf-v5-c-button--m-secondary--active--Color: var(--fa-texto);
+  --pf-v5-c-button--m-secondary--after--BorderColor: var(--fa-borda-forte);
+  --pf-v5-c-button--m-secondary--hover--after--BorderColor: var(--fa-suave);
+  --pf-v5-c-button--m-secondary--focus--after--BorderColor: var(--fa-acento);
+  --pf-v5-c-button--m-secondary--active--after--BorderColor: var(--fa-acento);
+  --pf-v5-c-button--m-link--Color: var(--fa-acento);
+  --pf-v5-c-button--m-link--hover--Color: var(--fa-acento-forte);
+}
+
+.pf-v5-c-button.pf-m-primary,
+.pf-v5-c-button.pf-m-secondary {
+  min-height: 2.75rem;
+  border-radius: 999px;
+  font-weight: 600;
+  letter-spacing: 0.005em;
+  transition:
+    background-color 150ms ease,
+    transform 150ms ease;
+}
+
+.pf-v5-c-button.pf-m-secondary::after {
+  border-radius: 999px;
+}
+
+.pf-v5-c-button.pf-m-primary:active {
+  transform: translateY(1px);
+}
+
+.pf-v5-c-button:focus-visible {
+  outline: 2px solid var(--fa-acento);
+  outline-offset: 3px;
+}
+
+/* ---- Alertas -------------------------------------------------------------- */
+
+.pf-v5-c-alert {
+  --pf-v5-c-alert--BoxShadow: none;
+  --pf-v5-c-alert--m-inline--BackgroundColor: rgb(236 236 241 / 0.04);
+  --pf-v5-c-alert--m-inline--m-info--BackgroundColor: rgb(236 236 241 / 0.04);
+  --pf-v5-c-alert--m-inline--m-danger--BackgroundColor: rgb(244 163 163 / 0.08);
+  --pf-v5-c-alert--m-inline--m-warning--BackgroundColor: rgb(240 200 120 / 0.08);
+  --pf-v5-c-alert--m-inline--m-success--BackgroundColor: rgb(180 228 200 / 0.08);
+  border: 1px solid var(--fa-borda-forte);
+  border-radius: 12px;
+}
+
+.pf-v5-c-alert::before {
+  display: none;
+}
+
+.pf-v5-c-alert.pf-m-danger {
+  border-color: rgb(244 163 163 / 0.35);
+}
+
+.pf-v5-c-alert.pf-m-success {
+  border-color: rgb(180 228 200 / 0.35);
+}
+
+.pf-v5-c-alert .pf-v5-c-alert__title,
+.pf-v5-c-alert .kc-feedback-text {
+  color: var(--fa-texto);
+  font-weight: 500;
+}
+
+.pf-v5-c-alert.pf-m-danger .pf-v5-c-alert__icon {
+  color: var(--fa-erro);
+}
+
+.pf-v5-c-alert.pf-m-success .pf-v5-c-alert__icon {
+  color: var(--fa-acento);
+}
+
+/* ---- Rodapé de informações ("Voltar para o login" etc.) ------------------ */
+
+.pf-v5-c-login__main-footer-band {
+  border-top: 1px solid var(--fa-borda);
+  color: var(--fa-suave);
+}
+
+.pf-v5-u-color-200 {
+  color: var(--fa-suave) !important;
+}
+
+/* No celular o PatternFly encosta o cartão nas bordas; aqui ele ganha respiro de 16px. */
+@media (max-width: 767px) {
+  .pf-v5-c-login__main {
+    margin-inline: 16px;
+  }
+
+  #kc-page-title,
+  .pf-v5-c-login__main-header .pf-v5-c-title {
+    font-size: 1.875rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition: none !important;
+  }
+}
