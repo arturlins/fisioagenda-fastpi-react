@@ -1,0 +1,32 @@
+# Ensaio local da pilha de produção, antes de gastar um `terraform apply`:
+#   cp infra/.env.ensaio.example infra/.env
+#   docker compose -f infra/compose.prod.yaml -f infra/compose.ensaio.yaml up -d --build
+# Constrói as imagens daqui em vez de baixar do GHCR, e lê realm e script do
+# banco direto do repositório. O realm inclui o client de testes — o filtro de
+# produção é do Terraform, testado em infra/terraform/tests.
+services:
+  postgres:
+    volumes:
+      - ../db/init:/docker-entrypoint-initdb.d:ro
+  keycloak:
+    build: ../keycloak
+    # O realm do repositório traz o client de testes, cujo segredo é placeholder;
+    # fora da lista de variáveis permitidas ele ficaria literal "${...}".
+    # Produção não precisa: o Terraform remove o client antes de entregar o realm.
+    command:
+      - start
+      - --optimized
+      - --import-realm
+      - --spi-admin--allowed-system-variables=KEYCLOAK_BACKEND_CLIENT_SECRET,KEYCLOAK_TESTES_CLIENT_SECRET,FISIOAGENDA_APP_URL,FISIOAGENDA_API_URL
+    environment:
+      KEYCLOAK_TESTES_CLIENT_SECRET: ${KEYCLOAK_TESTES_CLIENT_SECRET:?defina KEYCLOAK_TESTES_CLIENT_SECRET}
+    volumes:
+      - ../keycloak/realm-fisioagenda.json:/opt/keycloak/data/import/realm-fisioagenda.json:ro
+  migracao:
+    build: ../backend
+  semeadura:
+    build: ../backend
+  api:
+    build: ../backend
+  web:
+    build: ../frontend
