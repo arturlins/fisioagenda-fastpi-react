@@ -3,12 +3,26 @@ import "@fontsource-variable/inter";
 import "./styles.css";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
+import { Aplicacao } from "./aplicacao";
+import { TelaErro } from "./componentes/telas";
+import { carregarConfiguracao } from "./config";
 
-const raiz = document.getElementById("root");
-if (!raiz) throw new Error("Elemento #root ausente em index.html.");
+const elemento = document.getElementById("root");
+if (!elemento) throw new Error("Elemento #root ausente em index.html.");
+const raiz = createRoot(elemento);
 
-createRoot(raiz).render(
-  <StrictMode>
-    <p className="p-10 font-display text-4xl">FisioAgenda</p>
-  </StrictMode>,
+carregarConfiguracao().then(
+  (config) =>
+    raiz.render(
+      <StrictMode>
+        <Aplicacao config={config} />
+      </StrictMode>,
+    ),
+  (erro: unknown) =>
+    raiz.render(
+      <TelaErro
+        titulo="Configuração inválida"
+        detalhe={erro instanceof Error ? erro.message : String(erro)}
+      />,
+    ),
 );
