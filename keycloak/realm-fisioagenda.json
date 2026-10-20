@@ -11,7 +11,7 @@
   "registrationAllowed": false,
   "loginWithEmailAllowed": true,
   "duplicateEmailsAllowed": false,
-  "resetPasswordAllowed": true,
+  "resetPasswordAllowed": false,
   "editUsernameAllowed": true,
   "verifyEmail": false,
 
