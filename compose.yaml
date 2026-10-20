@@ -29,7 +29,7 @@ services:
       start_period: 15s
 
   keycloak:
-    image: quay.io/keycloak/keycloak:26.4.7
+    image: quay.io/keycloak/keycloak:26.8.1
     container_name: fisioagenda-keycloak
     restart: unless-stopped
     # Os ${VAR} do realm JSON só são interpolados para as variáveis explicitamente

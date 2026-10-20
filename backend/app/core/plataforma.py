@@ -21,19 +21,20 @@ import selectors
 import sys
 from collections.abc import Callable
 
-PRECISA_DE_SELECTOR = sys.platform == "win32"
+# As ramificações por plataforma comparam `sys.platform` diretamente, e não via
+# constante: é a única forma que o mypy reconhece para estreitar por plataforma.
+# Com uma constante, o checker rodando no Linux (CI) não encontra
+# `WindowsSelectorEventLoopPolicy`.
 
 
 def configurar_loop_de_eventos() -> None:
     """Política de loop compatível com o psycopg. Fora do Windows, não faz nada."""
-    if not PRECISA_DE_SELECTOR:
-        return
-
-    politica = asyncio.WindowsSelectorEventLoopPolicy
-    if not isinstance(asyncio.get_event_loop_policy(), politica):
-        # `set_event_loop_policy` caminha para a depreciação (3.14+), mas é o que
-        # o pytest-asyncio e o asyncio.run do Alembic consultam hoje.
-        asyncio.set_event_loop_policy(politica())
+    if sys.platform == "win32":
+        politica = asyncio.WindowsSelectorEventLoopPolicy
+        if not isinstance(asyncio.get_event_loop_policy(), politica):
+            # `set_event_loop_policy` caminha para a depreciação (3.14+), mas é o
+            # que o pytest-asyncio e o asyncio.run do Alembic consultam hoje.
+            asyncio.set_event_loop_policy(politica())
 
 
 def fabrica_de_loop() -> Callable[[], asyncio.AbstractEventLoop] | None:
@@ -41,6 +42,7 @@ def fabrica_de_loop() -> Callable[[], asyncio.AbstractEventLoop] | None:
 
     `None` fora do Windows: deixa quem chama manter o padrão (inclusive uvloop).
     """
-    if not PRECISA_DE_SELECTOR:
+    if sys.platform == "win32":
+        return lambda: asyncio.SelectorEventLoop(selectors.SelectSelector())
+    else:
         return None
-    return lambda: asyncio.SelectorEventLoop(selectors.SelectSelector())
