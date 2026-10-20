@@ -11,7 +11,8 @@ permissions:
 
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  # Push novo cancela a execução anterior, menos no main: lá ela pode estar publicando imagens.
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   backend:
@@ -33,6 +34,8 @@ jobs:
         run: docker compose up -d --wait postgres
       - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
+          # A mesma do backend/Dockerfile: o lock que o CI aceita é o que a imagem aceita.
+          version: "0.12.10"
           enable-cache: true
       - run: uv sync --locked
       - run: uv run ruff check .

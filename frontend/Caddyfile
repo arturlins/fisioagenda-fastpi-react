@@ -50,8 +50,9 @@ api.{$DOMINIO_BASE} {
 auth.{$DOMINIO_BASE} {
 	tls {$TLS_MODO}
 	import seguranca
-	# Console administrativo e realm master não ficam na internet.
-	@console path /admin/master /admin/master/* /realms/master /realms/master/*
+	# Console e Admin API inteiros, e o realm master, não ficam na internet: o backend
+	# fala com a Admin API pela rede interna (keycloak:8080), nunca por aqui.
+	@console path /admin /admin/* /realms/master /realms/master/*
 	respond @console 404
 	reverse_proxy keycloak:8080
 }

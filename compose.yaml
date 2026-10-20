@@ -67,12 +67,14 @@ services:
     # A imagem não traz curl nem wget; /dev/tcp do bash resolve.
     # Desde a versão 25 o endpoint de saúde vive na porta de gerenciamento (9000).
     healthcheck:
+      # Pronto = HTTP 200. Procurar "status": "UP" no corpo dava falso positivo no 26.8:
+      # durante o bootstrap a resposta é 503, mas a checagem "Graceful Shutdown" já vem UP.
       test:
         - CMD-SHELL
         - >-
           exec 3<>/dev/tcp/127.0.0.1/9000 &&
           printf 'GET /health/ready HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n' >&3 &&
-          grep -q '"status": "UP"' <&3
+          grep -q '^HTTP/1.1 200 ' <&3
       interval: 10s
       timeout: 5s
       retries: 20

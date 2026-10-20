@@ -65,6 +65,9 @@ services:
       KEYCLOAK_BACKEND_CLIENT_SECRET: ${KEYCLOAK_BACKEND_CLIENT_SECRET}
       FISIOAGENDA_APP_URL: https://app.${DOMINIO_BASE}
       FISIOAGENDA_API_URL: https://api.${DOMINIO_BASE}
+      # O padrão do kc.sh é 70% da RAM; num host de 4 GB dividido com Postgres e API,
+      # o teto fica em 40% (~1,6 GB). Substitui o padrão inteiro do kc.sh 26.8.
+      JAVA_OPTS_KC_HEAP: "-XX:MaxRAMPercentage=40"
       TZ: America/Maceio
     volumes:
       - ./keycloak/realm-fisioagenda.json:/opt/keycloak/data/import/realm-fisioagenda.json:ro
@@ -72,12 +75,14 @@ services:
       postgres:
         condition: service_healthy
     healthcheck:
+      # Pronto = HTTP 200. Procurar "status": "UP" no corpo dava falso positivo no 26.8:
+      # durante o bootstrap a resposta é 503, mas a checagem "Graceful Shutdown" já vem UP.
       test:
         - CMD-SHELL
         - >-
           exec 3<>/dev/tcp/127.0.0.1/9000 &&
           printf 'GET /health/ready HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n' >&3 &&
-          grep -q '"status": "UP"' <&3
+          grep -q '^HTTP/1.1 200 ' <&3
       interval: 10s
       timeout: 5s
       retries: 30
