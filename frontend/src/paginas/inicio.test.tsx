@@ -3,7 +3,7 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ConfiguracaoProvider } from "../contexto-config";
-import { PaginaInicio } from "./inicio";
+import { MARCADOR_RELOGIN, PaginaInicio } from "./inicio";
 
 const auth = vi.hoisted(() => ({
   user: { access_token: "abc", expires_at: Math.floor(Date.now() / 1000) + 900 },
@@ -50,6 +50,7 @@ describe("PaginaInicio", () => {
   beforeEach(() => {
     auth.signinRedirect.mockReset();
     auth.signoutRedirect.mockReset();
+    sessionStorage.clear();
   });
 
   it("mostra o papel em cada clínica", async () => {
@@ -109,6 +110,32 @@ describe("PaginaInicio", () => {
     renderizar();
 
     await vi.waitFor(() => expect(auth.signinRedirect).toHaveBeenCalled());
+    expect(sessionStorage.getItem(MARCADOR_RELOGIN)).toBe("1");
+  });
+
+  it("segundo 401 seguido mostra o erro em vez de redirecionar sem fim", async () => {
+    sessionStorage.setItem(MARCADOR_RELOGIN, "1");
+    responderCom({}, 401);
+
+    renderizar();
+
+    expect(await screen.findByText("A API recusou sua sessão.")).toBeInTheDocument();
+    expect(auth.signinRedirect).not.toHaveBeenCalled();
+
+    await userEvent.click(screen.getByRole("button", { name: "Entrar de novo" }));
+
+    expect(auth.signinRedirect).toHaveBeenCalledOnce();
+    expect(sessionStorage.getItem(MARCADOR_RELOGIN)).toBeNull();
+  });
+
+  it("perfil carregado limpa a marca de novo login", async () => {
+    sessionStorage.setItem(MARCADOR_RELOGIN, "1");
+    responderCom({ usuario, vinculos: [] });
+
+    renderizar();
+
+    expect(await screen.findByRole("heading", { level: 1 })).toHaveTextContent("Bruno");
+    expect(sessionStorage.getItem(MARCADOR_RELOGIN)).toBeNull();
   });
 
   it("Sair encerra a sessão no Keycloak", async () => {

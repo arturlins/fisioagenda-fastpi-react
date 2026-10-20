@@ -19,10 +19,46 @@ function falhaTransitoria(erro: Error): boolean {
   return erro instanceof ErroDaApi && STATUS_TRANSITORIOS.has(erro.status);
 }
 
+/**
+ * Marca, por aba, que já houve um novo login automático depois de um 401. Não
+ * guarda nada sensível — só "1". Sem ela, uma API que recusa todo token emitido
+ * pelo realm (emissor, audiência ou relógio divergentes) faria o navegador
+ * oscilar entre o SPA e o Keycloak para sempre.
+ */
+export const MARCADOR_RELOGIN = "fisioagenda:relogin-apos-401";
+
+// Storage indisponível conta como marca presente: sem como limitar o laço,
+// mostrar o erro é o caminho seguro.
+function jaTentouRelogin(): boolean {
+  try {
+    return sessionStorage.getItem(MARCADOR_RELOGIN) !== null;
+  } catch {
+    return true;
+  }
+}
+
+function marcarRelogin(): boolean {
+  try {
+    sessionStorage.setItem(MARCADOR_RELOGIN, "1");
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function limparRelogin(): void {
+  try {
+    sessionStorage.removeItem(MARCADOR_RELOGIN);
+  } catch {
+    // Nada a limpar se o storage não existe.
+  }
+}
+
 export function PaginaInicio() {
   const auth = useAuth();
   const config = useConfiguracao();
   const token = auth.user?.access_token;
+  const [sessaoRecusada, definirSessaoRecusada] = useState(false);
 
   const perfil = useQuery({
     queryKey: ["perfil"],
@@ -31,10 +67,25 @@ export function PaginaInicio() {
     retry: (falhas, erro) => falhaTransitoria(erro) && falhas < 2,
   });
 
-  // Token recusado pela API: a sessão SSO decide se pede senha de novo.
+  // Token recusado pela API: uma única volta automática ao Keycloak por aba (a
+  // sessão SSO decide se pede senha). Um segundo 401 seguido vira erro visível.
   useEffect(() => {
-    if (perfil.error instanceof NaoAutenticadoError) void auth.signinRedirect();
+    if (!(perfil.error instanceof NaoAutenticadoError)) return;
+    if (!jaTentouRelogin() && marcarRelogin()) {
+      void auth.signinRedirect();
+    } else {
+      definirSessaoRecusada(true);
+    }
   }, [perfil.error, auth]);
+
+  useEffect(() => {
+    if (perfil.data) limparRelogin();
+  }, [perfil.data]);
+
+  function entrarDeNovo(): void {
+    limparRelogin();
+    void auth.signinRedirect();
+  }
 
   return (
     <div className="min-h-dvh">
@@ -42,6 +93,8 @@ export function PaginaInicio() {
       <main className="mx-auto grid max-w-6xl gap-12 px-6 py-14 sm:px-10 lg:grid-cols-[1fr_320px]">
         {perfil.data ? (
           <Painel perfil={perfil.data} />
+        ) : sessaoRecusada ? (
+          <SessaoRecusada aoEntrar={entrarDeNovo} />
         ) : perfil.error && !(perfil.error instanceof NaoAutenticadoError) ? (
           <ErroDoPerfil erro={perfil.error} />
         ) : (
@@ -133,6 +186,26 @@ function ErroDoPerfil({ erro }: { erro: Error }) {
       {erro instanceof ErroDaApi && erro.idCorrelacao && (
         <p className="mt-2 font-mono text-xs text-suave">id de correlação: {erro.idCorrelacao}</p>
       )}
+    </section>
+  );
+}
+
+function SessaoRecusada({ aoEntrar }: { aoEntrar: () => void }) {
+  return (
+    <section role="alert">
+      <p className="text-xs uppercase tracking-[0.2em] text-perigo">Não foi possível carregar</p>
+      <p className="mt-4 text-lg">A API recusou sua sessão.</p>
+      <p className="mt-2 max-w-xl text-sm text-suave">
+        O login no Keycloak deu certo, mas a API não aceitou o token — mesmo depois de uma nova
+        tentativa.
+      </p>
+      <button
+        type="button"
+        onClick={aoEntrar}
+        className="mt-8 rounded-full border border-borda px-6 py-3 text-sm transition hover:border-suave focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-acento"
+      >
+        Entrar de novo
+      </button>
     </section>
   );
 }
