@@ -1,5 +1,5 @@
 import { User, UserManager } from "oidc-client-ts";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { criarConfiguracaoOidc } from "./oidc";
 
 const config = {
@@ -41,5 +41,23 @@ describe("criarConfiguracaoOidc", () => {
     expect(sessionStorage.length).toBe(0);
     expect(localStorage.length).toBe(0);
     expect((await gerenciador.getUser())?.access_token).toBe("token-de-acesso");
+  });
+
+  it("o estado do PKCE vai ao sessionStorage, nunca ao localStorage", async () => {
+    const gerenciador = new UserManager({
+      ...criarConfiguracaoOidc(config, "https://app.x.sslip.io"),
+      metadata: {
+        issuer: "https://auth.x.sslip.io/realms/fisioagenda",
+        authorization_endpoint: "https://auth.x.sslip.io/realms/fisioagenda/auth",
+      },
+    });
+
+    // Gera o pedido de login (e grava o state/code_verifier); a navegação em si não importa aqui.
+    // A promessa só termina com a navegação, que nunca acontece no jsdom: não se espera por ela.
+    void gerenciador.signinRedirect().catch(() => undefined);
+    await vi.waitFor(() => expect(localStorage.length + sessionStorage.length).toBeGreaterThan(0));
+
+    expect(localStorage.length).toBe(0);
+    expect(sessionStorage.length).toBe(1);
   });
 });

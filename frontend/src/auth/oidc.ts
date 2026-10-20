@@ -18,6 +18,8 @@ export function criarConfiguracaoOidc(config: Configuracao, origem: string): Use
     response_type: "code",
     scope: "openid profile email",
     userStore: new WebStorageStateStore({ store: new InMemoryWebStorage() }),
+    // O padrão da biblioteca é localStorage; um login abandonado deixaria o code_verifier lá.
+    stateStore: new WebStorageStateStore({ store: window.sessionStorage }),
     automaticSilentRenew: true,
     monitorSession: false,
   };
