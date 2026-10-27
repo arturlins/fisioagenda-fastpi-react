@@ -184,7 +184,9 @@ servidor (`terraform output`):
 | `https://auth.<ip-com-traços>.sslip.io` | Keycloak — só o realm `fisioagenda`; console administrativo responde 404 |
 
 Os usuários são os mesmos do seed (seção 2). Em produção a senha **não** é a de
-desenvolvimento: o Terraform a gera e ela só sai por `terraform output -raw senha_demonstracao`.
+desenvolvimento: ela nasce no próprio servidor, no primeiro boot, e nunca passa pelo Terraform —
+nem pelo state, nem pelo serviço de metadados. Para lê-la, o comando SSH pronto sai de
+`terraform output -raw comando_senha_demonstracao`.
 
 Para rodar o frontend localmente: `cd frontend && bun install && bun run dev`, com a pilha da
 seção 1 de pé, e abrir **`http://localhost:5173`** (não `127.0.0.1`).

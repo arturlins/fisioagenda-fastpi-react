@@ -262,8 +262,13 @@ cp terraform.tfvars.example terraform.tfvars   # ignorado pelo Git
 | `acme_email` | contato do Let's Encrypt |
 | `tipo_servidor`, `localizacao` | opcionais: `cpx22`/`nbg1` por padrão; alternativas `cpx32`/`hel1` se faltar estoque |
 
-Os segredos (banco, Keycloak, senha do seed) **não** são variáveis: o Terraform os gera e eles
-ficam no state local, também fora do Git.
+Os segredos (banco, Keycloak, senha do seed) **não** são variáveis nem passam pelo Terraform:
+nascem no próprio servidor, no primeiro boot. O `user_data` leva só valores públicos (domínio,
+imagens, nomes de usuário) e um script que gera as seis senhas localmente e grava o `.env` com
+`0600`. Assim nenhuma senha fica no state, nem no serviço de metadados da Hetzner — que qualquer
+processo da máquina consegue ler. Esse serviço, além disso, é bloqueado a cada boot, antes do
+Docker, para containers e usuários sem privilégio. Perder o servidor é perder as senhas, junto
+com o volume que elas protegem: o próximo `apply` gera outras.
 
 ### Subir, verificar, derrubar
 
@@ -271,8 +276,21 @@ ficam no state local, também fora do Git.
 terraform init
 terraform plan -out plano.tfplan
 terraform apply plano.tfplan
-terraform output                                   # URLs, IP e comando SSH
-terraform output -raw senha_demonstracao           # senha dos usuários do seed
+terraform output                                   # URLs, IP e comandos SSH
+```
+
+A senha dos usuários do seed fica só no servidor. `comando_senha_demonstracao` é o comando
+pronto para lê-la por SSH — o mesmo texto funciona no sh e no PowerShell:
+
+```bash
+terraform output -raw comando_senha_demonstracao  # ssh deploy@<ip> "sudo sed -n 's/^SEMEAR_SENHA=//p' /opt/fisioagenda/.env"
+```
+
+Cole o comando impresso para ver a senha, ou capture direto numa variável:
+
+```bash
+SENHA_DEMO="$(eval "$(terraform output -raw comando_senha_demonstracao)")"    # sh
+$env:SENHA_DEMO = Invoke-Expression (terraform output -raw comando_senha_demonstracao)  # PowerShell
 ```
 
 O cloud-init leva alguns minutos depois do fim do `apply`. O smoke test (só biblioteca padrão)
@@ -289,7 +307,7 @@ E o E2E contra o ambiente implantado:
 ```bash
 cd frontend
 E2E_BASE_URL="$(terraform -chdir=../infra/terraform output -raw url_app)" \
-E2E_SENHA="$(terraform -chdir=../infra/terraform output -raw senha_demonstracao)" bun run e2e
+E2E_SENHA="$(eval "$(terraform -chdir=../infra/terraform output -raw comando_senha_demonstracao)")" bun run e2e
 ```
 
 Para encerrar: `terraform -chdir=infra/terraform destroy`. O próximo `apply` cria um IP novo — e
