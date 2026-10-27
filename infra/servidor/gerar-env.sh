@@ -13,6 +13,8 @@ set -euo pipefail
 diretorio="${1:-/opt/fisioagenda}"
 base="$diretorio/.env.base"
 destino="$diretorio/.env"
+# Projeto "fisioagenda-prod" (name: do compose.prod.yaml) + volume postgres-dados.
+volume_banco="fisioagenda-prod_postgres-dados"
 
 segredos=(
   POSTGRES_SUPERUSER_PASSWORD
@@ -34,6 +36,17 @@ if [[ -e "$destino" ]]; then
 fi
 
 [[ -r "$base" ]] || falhar "$base ausente."
+
+# .env apagado com o banco ainda de pé: senhas novas não abririam o Postgres nem
+# o Keycloak, já inicializados com as antigas. Recusa em vez de quebrar a pilha.
+# No primeiro boot o Docker nem está instalado: sem docker, não há volume.
+if command -v docker >/dev/null 2>&1; then
+  docker info >/dev/null 2>&1 ||
+    falhar "Docker instalado mas inacessível: não dá para confirmar que $volume_banco não existe."
+  if docker volume inspect "$volume_banco" >/dev/null 2>&1; then
+    falhar "$destino ausente, mas o volume $volume_banco existe: senhas novas não abririam o banco já inicializado. Restaure o .env original ou, para recomeçar do zero, 'docker compose --project-directory $diretorio down -v' antes."
+  fi
+fi
 for chave in "${segredos[@]}"; do
   if grep -q "^${chave}=" "$base"; then
     falhar "$base não pode definir $chave: segredo nasce aqui."
