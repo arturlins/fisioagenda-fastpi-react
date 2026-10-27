@@ -27,10 +27,16 @@ write_files:
     encoding: b64
     content: ${compose}
     permissions: "0644"
-  - path: /opt/fisioagenda/.env
+  # Só valores não secretos. As senhas nascem no servidor (gerar-env.sh):
+  # o metadata da Hetzner, legível de dentro da máquina, não carrega segredo.
+  - path: /opt/fisioagenda/.env.base
     encoding: b64
-    content: ${env}
-    permissions: "0600"
+    content: ${env_base}
+    permissions: "0644"
+  - path: /opt/fisioagenda/gerar-env.sh
+    encoding: b64
+    content: ${gerar_env}
+    permissions: "0700"
   - path: /opt/fisioagenda/keycloak/realm-fisioagenda.json
     encoding: b64
     content: ${realm}
@@ -41,6 +47,7 @@ write_files:
     permissions: "0755"
 
 runcmd:
+  - /opt/fisioagenda/gerar-env.sh
   # Docker do repositório oficial — o pacote da distribuição fica para trás.
   - install -m 0755 -d /etc/apt/keyrings
   - curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc

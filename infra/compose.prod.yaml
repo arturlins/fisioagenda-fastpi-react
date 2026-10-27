@@ -1,5 +1,6 @@
 # Pilha de produção. Entregue no servidor pelo cloud-init (infra/terraform) e
-# configurada só pelo .env que o Terraform gera — nenhuma edição à mão.
+# configurada só pelo .env que o servidor gera no primeiro boot
+# (infra/servidor/gerar-env.sh) — nenhuma edição à mão.
 name: fisioagenda-prod
 
 x-api-ambiente: &api-ambiente

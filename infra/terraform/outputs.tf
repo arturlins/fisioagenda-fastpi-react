@@ -40,8 +40,10 @@ output "usuarios_demonstracao" {
   ]
 }
 
-output "senha_demonstracao" {
-  description = "Senha dos usuários de demonstração: terraform output -raw senha_demonstracao"
-  value       = random_password.segredo["demonstracao"].result
-  sensitive   = true
+# A senha nasce no servidor; o Terraform só sabe onde ela está. Aspas duplas por
+# fora e simples por dentro: o mesmo texto funciona colado no sh e no PowerShell,
+# e tudo roda do lado remoto (nada de cut/grep na máquina do operador).
+output "comando_senha_demonstracao" {
+  description = "Lê a senha dos usuários de demonstração no servidor, via SSH."
+  value       = "ssh deploy@${hcloud_primary_ip.ipv4.ip_address} \"sudo sed -n 's/^SEMEAR_SENHA=//p' /opt/fisioagenda/.env\""
 }
