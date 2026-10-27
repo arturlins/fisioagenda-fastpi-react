@@ -21,16 +21,31 @@ package_upgrade: true
 packages:
   - ca-certificates
   - curl
+  - iptables
 
 write_files:
   - path: /opt/fisioagenda/compose.yaml
     encoding: b64
     content: ${compose}
     permissions: "0644"
-  - path: /opt/fisioagenda/.env
+  # Só valores não secretos. As senhas nascem no servidor (gerar-env.sh):
+  # o metadata da Hetzner, legível de dentro da máquina, não carrega segredo.
+  - path: /opt/fisioagenda/.env.base
     encoding: b64
-    content: ${env}
-    permissions: "0600"
+    content: ${env_base}
+    permissions: "0644"
+  - path: /opt/fisioagenda/gerar-env.sh
+    encoding: b64
+    content: ${gerar_env}
+    permissions: "0700"
+  - path: /usr/local/sbin/fisioagenda-bloquear-metadados
+    encoding: b64
+    content: ${bloquear_metadados}
+    permissions: "0700"
+  - path: /etc/systemd/system/fisioagenda-bloqueio-metadados.service
+    encoding: b64
+    content: ${unit_bloqueio}
+    permissions: "0644"
   - path: /opt/fisioagenda/keycloak/realm-fisioagenda.json
     encoding: b64
     content: ${realm}
@@ -41,6 +56,9 @@ write_files:
     permissions: "0755"
 
 runcmd:
+  # Metadata fechado antes de existir o Docker; a unit repete isso a cada boot.
+  - systemctl daemon-reload && systemctl enable --now fisioagenda-bloqueio-metadados.service
+  - /opt/fisioagenda/gerar-env.sh
   # Docker do repositório oficial — o pacote da distribuição fica para trás.
   - install -m 0755 -d /etc/apt/keyrings
   - curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
@@ -49,4 +67,5 @@ runcmd:
   - apt-get update
   - DEBIAN_FRONTEND=noninteractive apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
   - systemctl enable --now docker
-  - docker compose --project-directory /opt/fisioagenda up -d --pull always
+  # Falha fechada: sem o bloqueio ativo, nenhum container sobe.
+  - systemctl is-active --quiet fisioagenda-bloqueio-metadados.service && docker compose --project-directory /opt/fisioagenda up -d --pull always
