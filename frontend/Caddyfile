@@ -1,5 +1,5 @@
 # Borda única do servidor: serve o SPA e faz proxy da API e do Keycloak.
-# DOMINIO_BASE e TLS_MODO chegam do .env gerado pelo Terraform.
+# DOMINIO_BASE e TLS_MODO chegam do .env gerado no servidor (infra/servidor/gerar-env.sh).
 {
 	admin off
 }

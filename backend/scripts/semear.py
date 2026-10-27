@@ -50,9 +50,9 @@ NOME_DA_CONTA = "Clínica Movimento"
 def senha_de_demonstracao() -> tuple[SecretStr, bool]:
     """Senha dos usuários de exemplo, e se ela veio do ambiente.
 
-    Fora da máquina de desenvolvimento, o Terraform gera a senha e a entrega por
-    `SEMEAR_SENHA`: uma senha escrita num repositório público não protege um
-    ambiente exposto na internet.
+    Fora da máquina de desenvolvimento, a senha é gerada no servidor
+    (`infra/servidor/gerar-env.sh`) e chega por `SEMEAR_SENHA`: uma senha escrita
+    num repositório público não protege um ambiente exposto na internet.
     """
     valor = os.environ.get("SEMEAR_SENHA")
     if valor is None:

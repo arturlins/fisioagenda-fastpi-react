@@ -1,7 +1,8 @@
 """Seed de demonstração: de onde vem a senha e o que é impresso.
 
-No servidor público, a senha é gerada pelo Terraform. A senha fixa do
-repositório só vale em desenvolvimento, e a gerada nunca vai para o log.
+No servidor público, a senha é gerada no próprio servidor
+(`infra/servidor/gerar-env.sh`). A senha fixa do repositório só vale em
+desenvolvimento, e a gerada nunca vai para o log.
 """
 
 from __future__ import annotations
