@@ -70,3 +70,60 @@ run "ssh_aberto_ao_mundo_e_recusado" {
 
   expect_failures = [var.ssh_permitido_cidr]
 }
+
+# O user_data é legível de dentro do servidor (serviço de metadados) e imutável
+# durante a vida dele: não pode carregar segredo nenhum. Os arquivos vão em
+# base64, então as asserções decodificam cada um antes de procurar.
+run "user_data_sem_segredo" {
+  command = apply
+
+  assert {
+    condition = strcontains(
+      base64decode(regex("path: /opt/fisioagenda/[.]env[.]base\\n\\s+encoding: b64\\n\\s+content: ([A-Za-z0-9+/=]+)", hcloud_server.fisioagenda.user_data)[0]),
+      "DOMINIO_BASE=203-0-113-10.sslip.io\n"
+    )
+    error_message = "O .env.base não traz o domínio derivado do IP."
+  }
+  assert {
+    condition = alltrue([
+      for proibido in ["PASSWORD", "SECRET", "SEMEAR_SENHA"] : !strcontains(
+        base64decode(regex("path: /opt/fisioagenda/[.]env[.]base\\n\\s+encoding: b64\\n\\s+content: ([A-Za-z0-9+/=]+)", hcloud_server.fisioagenda.user_data)[0]),
+        proibido
+      )
+    ])
+    error_message = "O .env.base carrega chave de segredo."
+  }
+  assert {
+    # Nenhum arquivo entregue atribui valor literal a um segredo, em nenhum dos
+    # formatos que viajam: NOME=valor (.env, shell), "secret": "valor" (JSON do
+    # realm), CHAVE: valor (YAML do compose), PASSWORD 'valor' (SQL do db_init).
+    # Referências como ${APP_DB_PASSWORD} não casam: depois do separador vem "$".
+    condition = alltrue([
+      for grupo in regexall("content: ([A-Za-z0-9+/=]+)", hcloud_server.fisioagenda.user_data) :
+      !can(regex("(?i)(password|secret|senha)\"?(\\s*[:=]\\s*['\"]?|\\s+['\"])[A-Za-z0-9]", base64decode(grupo[0])))
+    ])
+    error_message = "Algum arquivo do user_data atribui valor literal a um segredo."
+  }
+  assert {
+    condition     = !can(regex("(?i)(password|secret|senha)\"?(\\s*[:=]\\s*['\"]?|\\s+['\"])[A-Za-z0-9]", hcloud_server.fisioagenda.user_data))
+    error_message = "O user_data atribui valor literal a um segredo."
+  }
+  assert {
+    # Todo client do realm de produção com secret o recebe por placeholder,
+    # resolvido pelo Keycloak a partir do .env gerado no servidor.
+    condition = alltrue([
+      for client in jsondecode(base64decode(regex("path: /opt/fisioagenda/keycloak/realm-fisioagenda[.]json\\n\\s+encoding: b64\\n\\s+content: ([A-Za-z0-9+/=]+)", hcloud_server.fisioagenda.user_data)[0])).clients :
+      !can(client.secret) || startswith(client.secret, "$${")
+    ])
+    error_message = "Um client do realm de produção traz secret literal em vez de placeholder."
+  }
+  assert {
+    # Sem isto, um regex que não casa nada faria as duas asserções acima passarem no vazio.
+    condition     = length(regexall("content: ([A-Za-z0-9+/=]+)", hcloud_server.fisioagenda.user_data)) == 7
+    error_message = "Esperados 7 arquivos no write_files: o teste não está lendo o que o servidor recebe."
+  }
+  assert {
+    condition     = output.comando_senha_demonstracao == "ssh deploy@203.0.113.10 \"sudo sed -n 's/^SEMEAR_SENHA=//p' /opt/fisioagenda/.env\""
+    error_message = "Comando da senha errado: ${output.comando_senha_demonstracao}"
+  }
+}
