@@ -109,8 +109,8 @@ run "user_data_sem_segredo" {
   }
   assert {
     # Sem isto, um regex que não casa nada faria as duas asserções acima passarem no vazio.
-    condition     = length(regexall("content: ([A-Za-z0-9+/=]+)", hcloud_server.fisioagenda.user_data)) == 5
-    error_message = "Esperados 5 arquivos no write_files: o teste não está lendo o que o servidor recebe."
+    condition     = length(regexall("content: ([A-Za-z0-9+/=]+)", hcloud_server.fisioagenda.user_data)) == 7
+    error_message = "Esperados 7 arquivos no write_files: o teste não está lendo o que o servidor recebe."
   }
   assert {
     condition     = output.comando_senha_demonstracao == "ssh deploy@203.0.113.10 \"sudo sed -n 's/^SEMEAR_SENHA=//p' /opt/fisioagenda/.env\""

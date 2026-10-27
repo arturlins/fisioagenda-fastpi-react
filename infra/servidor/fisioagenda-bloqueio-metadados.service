@@ -1,0 +1,14 @@
+[Unit]
+Description=FisioAgenda: bloqueio do servico de metadados para containers e usuarios sem privilegio
+# As regras precisam existir antes do primeiro container. Before= ordena dentro
+# da mesma transacao; o WantedBy=docker.service abaixo garante que a unit entra
+# em toda transacao que inicia o Docker, mesmo fora do boot.
+Before=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/fisioagenda-bloquear-metadados
+
+[Install]
+WantedBy=multi-user.target docker.service

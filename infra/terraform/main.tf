@@ -95,12 +95,14 @@ resource "hcloud_server" "fisioagenda" {
   labels       = local.rotulos
 
   user_data = templatefile("${path.module}/templates/cloud-init.yaml.tftpl", {
-    chave_ssh = hcloud_ssh_key.operador.public_key
-    compose   = base64encode(file("${path.module}/../compose.prod.yaml"))
-    env_base  = base64encode(local.env_base)
-    gerar_env = base64encode(file("${path.module}/../servidor/gerar-env.sh"))
-    realm     = base64encode(jsonencode(local.realm_producao))
-    db_init   = base64encode(file("${path.module}/../../db/init/01-bancos-e-extensoes.sh"))
+    chave_ssh          = hcloud_ssh_key.operador.public_key
+    compose            = base64encode(file("${path.module}/../compose.prod.yaml"))
+    env_base           = base64encode(local.env_base)
+    gerar_env          = base64encode(file("${path.module}/../servidor/gerar-env.sh"))
+    bloquear_metadados = base64encode(file("${path.module}/../servidor/bloquear-metadados.sh"))
+    unit_bloqueio      = base64encode(file("${path.module}/../servidor/fisioagenda-bloqueio-metadados.service"))
+    realm              = base64encode(jsonencode(local.realm_producao))
+    db_init            = base64encode(file("${path.module}/../../db/init/01-bancos-e-extensoes.sh"))
   })
 
   public_net {
